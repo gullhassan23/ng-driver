@@ -1,0 +1,16 @@
+# Compiled JavaScript files
+lib/**/*.js
+lib/**/*.js.map
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Dependency directories
+node_modules/
+
+# Local env / secrets — never commit service accounts
+.env
+.env.*
+*.pem
+*-firebase-adminsdk-*.json
+serviceAccount*.json

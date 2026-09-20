@@ -1,0 +1,44 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "ng-town-car-ride",
+          "appId": "1:578123178626:android:39450d33c110180c304a9b",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "ng-town-car-ride",
+          "configurations": {
+            "android": "1:578123178626:android:39450d33c110180c304a9b",
+            "ios": "1:578123178626:ios:4409e867b75ab708304a9b",
+            "macos": "1:578123178626:ios:bb280ca7f62704a0304a9b",
+            "web": "1:578123178626:web:c66a7b900cda36f2304a9b"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ]
+}
