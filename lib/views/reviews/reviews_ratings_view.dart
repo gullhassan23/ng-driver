@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:ngtowncardriver/widgets/header/header.dart';
 
 import '../../controllers/reviews_ratings_controller.dart';
 import '../../models/ride_model.dart';
@@ -40,7 +41,14 @@ class ReviewsRatingsView extends GetView<ReviewsRatingsController> {
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(context, responsive),
+            AppHeader(
+              showDescription: true,
+              description: AppText.reviewsRatingsSubtitle,
+              responsive: responsive,
+              title: AppText.reviews,
+              subtitle: AppText.ratings,
+              canPop: true,
+            ),
             Expanded(
               child: Obx(() {
                 if (controller.isLoading.value) {
@@ -134,68 +142,68 @@ class ReviewsRatingsView extends GetView<ReviewsRatingsController> {
     );
   }
 
-  Widget _buildHeader(BuildContext context, ResponsiveRepo responsive) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: responsive.w(2),
-        right: responsive.w(4),
-        top: responsive.h(1),
-        bottom: responsive.h(1),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AppIconButtonWidget(
-            icon: Icons.arrow_back,
-            onPressed: () => Get.back(),
-            backgroundColor: AppColors.primaryGreen,
-            iconColor: AppColors.black,
-            width: responsive.w(10),
-            height: responsive.h(5),
-            top: responsive.h(2),
-            left: responsive.w(4),
-            borderRadius: responsive.w(3),
-          ),
-          SizedBox(width: responsive.w(5)),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    children: [
-                      TextSpan(
-                        text: AppText.reviews,
-                        style: AppTextStyles.large(
-                          context,
-                        ).copyWith(color: AppColors.white),
-                      ),
-                      TextSpan(
-                        text: AppText.ratings,
-                        style: AppTextStyles.large(
-                          context,
-                        ).copyWith(color: AppColors.primaryGreen),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: responsive.h(0.2)),
-                Text(
-                  AppText.reviewsRatingsSubtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.small(context).copyWith(
-                    fontSize: responsive.h(1.4),
-                    color: AppColors.white.withValues(alpha: 0.55),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Widget _buildHeader(BuildContext context, ResponsiveRepo responsive) {
+  //   return Padding(
+  //     padding: EdgeInsets.only(
+  //       left: responsive.w(2),
+  //       right: responsive.w(4),
+  //       top: responsive.h(1),
+  //       bottom: responsive.h(1),
+  //     ),
+  //     child: Row(
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         AppIconButtonWidget(
+  //           icon: Icons.arrow_back,
+  //           onPressed: () => Get.back(),
+  //           backgroundColor: AppColors.primaryGreen,
+  //           iconColor: AppColors.black,
+  //           width: responsive.w(10),
+  //           height: responsive.h(5),
+  //           top: responsive.h(2),
+  //           left: responsive.w(4),
+  //           borderRadius: responsive.w(3),
+  //         ),
+  //         SizedBox(width: responsive.w(5)),
+  //         Expanded(
+  //           child: Column(
+  //             crossAxisAlignment: CrossAxisAlignment.start,
+  //             children: [
+  //               RichText(
+  //                 text: TextSpan(
+  //                   children: [
+  //                     TextSpan(
+  //                       text: AppText.reviews,
+  //                       style: AppTextStyles.large(
+  //                         context,
+  //                       ).copyWith(color: AppColors.white),
+  //                     ),
+  //                     TextSpan(
+  //                       text: AppText.ratings,
+  //                       style: AppTextStyles.large(
+  //                         context,
+  //                       ).copyWith(color: AppColors.primaryGreen),
+  //                     ),
+  //                   ],
+  //                 ),
+  //               ),
+  //               SizedBox(height: responsive.h(0.2)),
+  //               Text(
+  //                 AppText.reviewsRatingsSubtitle,
+  //                 maxLines: 2,
+  //                 overflow: TextOverflow.ellipsis,
+  //                 style: AppTextStyles.small(context).copyWith(
+  //                   fontSize: responsive.h(1.4),
+  //                   color: AppColors.white.withValues(alpha: 0.55),
+  //                 ),
+  //               ),
+  //             ],
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   String _dateLabel(RideModel ride) {
     final when = ride.ratedAt ?? ride.completedAt ?? ride.updatedAt;
@@ -436,6 +444,26 @@ class _ReviewCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: responsive.w(2.2),
+                vertical: responsive.h(0.28),
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.primaryGreen.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(responsive.w(1.5)),
+              ),
+              child: Text(
+                ride.isFromReservation ? AppText.reservation : 'Ride',
+                style: AppTextStyles.whiteSmall(context).copyWith(
+                  color: AppColors.primaryGreen,
+                  fontWeight: FontWeight.w700,
+                  fontSize: responsive.h(1.2),
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ),
+            SizedBox(height: responsive.h(1)),
             Row(
               children: [
                 Container(

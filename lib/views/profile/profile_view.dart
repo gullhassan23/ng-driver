@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:ngtowncardriver/controllers/auth_controller.dart';
@@ -89,10 +90,7 @@ class _ProfileViewState extends State<ProfileView> {
 
     final fullName = _nameController.text.trim();
     if (fullName.isEmpty) {
-      AppSnackbar.error(
-        title: 'Save failed',
-        message: 'Enter your full name.',
-      );
+      AppSnackbar.error(title: 'Save failed', message: 'Enter your full name.');
       return;
     }
 
@@ -241,7 +239,7 @@ class _ProfileViewState extends State<ProfileView> {
                               shape: BoxShape.circle,
                             ),
                             child: const Icon(
-                             Icons.check,
+                              Icons.check,
                               color: AppColors.black,
                               size: 16,
                             ),
@@ -397,9 +395,9 @@ class _ProfileViewState extends State<ProfileView> {
               MenuItem(
                 context: context,
                 title: 'Logout',
-                icon: Icons.logout,
-                iconColor: AppColors.primaryRed,
-                textColor: AppColors.primaryRed,
+                icon: CupertinoIcons.square_arrow_left,
+                iconColor: AppColors.primaryGreen,
+                textColor: AppColors.white,
                 onTap: () {
                   _showLogoutDialog(context);
                 },
@@ -412,8 +410,6 @@ class _ProfileViewState extends State<ProfileView> {
       ),
     );
   }
-
-
 
   Widget _editRow({
     required BuildContext context,
@@ -462,9 +458,6 @@ class _ProfileViewState extends State<ProfileView> {
       color: AppColors.white.withValues(alpha: 0.08),
     );
   }
-
- 
-
 
   void _showLogoutDialog(BuildContext context) {
     showDialog(

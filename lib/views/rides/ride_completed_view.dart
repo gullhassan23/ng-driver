@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:ngtowncardriver/widgets/header/header.dart';
 
 import '../../controllers/ride_completed_controller.dart';
 import '../../responsiveness/responsive_repo.dart';
@@ -62,12 +63,15 @@ class RideCompletedView extends GetView<RideCompletedController> {
           ? 'Drop-off'
           : ride.dropoffLocation.trim();
       final fare = ride.formattedFare.isEmpty ? '—' : ride.formattedFare;
-      final distance =
-          ride.formattedDistance.isEmpty ? '—' : ride.formattedDistance;
-      final duration =
-          ride.formattedDuration.isEmpty ? '—' : ride.formattedDuration;
-      final vehicle =
-          ride.vehicleType.trim().isEmpty ? '—' : ride.vehicleType.trim();
+      final distance = ride.formattedDistance.isEmpty
+          ? '—'
+          : ride.formattedDistance;
+      final duration = ride.formattedDuration.isEmpty
+          ? '—'
+          : ride.formattedDuration;
+      final vehicle = ride.vehicleType.trim().isEmpty
+          ? '—'
+          : ride.vehicleType.trim();
       final returnToDashboard = controller.returnToDashboard.value;
 
       return PopScope(
@@ -80,7 +84,15 @@ class RideCompletedView extends GetView<RideCompletedController> {
           body: SafeArea(
             child: Column(
               children: [
-                _buildHeader(context, responsive),
+                AppHeader(
+                  responsive: responsive,
+                  title: AppText.ride,
+                  subtitle: AppText.completed,
+                  canPop: true,
+                  showDescription: true,
+                  description: "Trip summary",
+                ),
+                SizedBox(height: responsive.h(2)),
                 Expanded(
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
@@ -152,73 +164,73 @@ class RideCompletedView extends GetView<RideCompletedController> {
     });
   }
 
-  Widget _buildHeader(BuildContext context, ResponsiveRepo responsive) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: responsive.w(4),
-        right: responsive.w(4),
-        top: responsive.h(1),
-        bottom: responsive.h(1),
-      ),
-      child: Row(
-        children: [
-          AppIconButtonWidget(
-            icon: Icons.arrow_back,
-            onPressed: controller.close,
-            backgroundColor: AppColors.primaryGreen,
-            iconColor: AppColors.black,
-            width: responsive.w(10),
-            height: responsive.h(5),
-            top: responsive.h(2),
-            left: responsive.w(4),
-            borderRadius: responsive.w(3),
-          ),
-          SizedBox(width: responsive.w(2.5)),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: RichText(
-                    maxLines: 1,
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: 'Ride ',
-                          style: AppTextStyles.whiteMedium(context).copyWith(
-                            color: AppColors.white,
-                            fontSize: responsive.h(2.4),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        TextSpan(
-                          text: AppText.completed,
-                          style: AppTextStyles.whiteMedium(context).copyWith(
-                            color: AppColors.primaryGreen,
-                            fontSize: responsive.h(2.4),
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                Text(
-                  'Trip summary',
-                  style: AppTextStyles.small(context).copyWith(
-                    color: AppColors.primaryGreen,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Widget _buildHeader(BuildContext context, ResponsiveRepo responsive) {
+  //   return Padding(
+  //     padding: EdgeInsets.only(
+  //       left: responsive.w(4),
+  //       right: responsive.w(4),
+  //       top: responsive.h(1),
+  //       bottom: responsive.h(1),
+  //     ),
+  //     child: Row(
+  //       children: [
+  //         AppIconButtonWidget(
+  //           icon: Icons.arrow_back,
+  //           onPressed: controller.close,
+  //           backgroundColor: AppColors.primaryGreen,
+  //           iconColor: AppColors.black,
+  //           width: responsive.w(10),
+  //           height: responsive.h(5),
+  //           top: responsive.h(2),
+  //           left: responsive.w(4),
+  //           borderRadius: responsive.w(3),
+  //         ),
+  //         SizedBox(width: responsive.w(2.5)),
+  //         Expanded(
+  //           child: Column(
+  //             crossAxisAlignment: CrossAxisAlignment.start,
+  //             children: [
+  //               FittedBox(
+  //                 fit: BoxFit.scaleDown,
+  //                 alignment: Alignment.centerLeft,
+  //                 child: RichText(
+  //                   maxLines: 1,
+  //                   text: TextSpan(
+  //                     children: [
+  //                       TextSpan(
+  //                         text: 'Ride ',
+  //                         style: AppTextStyles.whiteMedium(context).copyWith(
+  //                           color: AppColors.white,
+  //                           fontSize: responsive.h(2.4),
+  //                           fontWeight: FontWeight.w700,
+  //                         ),
+  //                       ),
+  //                       TextSpan(
+  //                         text: AppText.completed,
+  //                         style: AppTextStyles.whiteMedium(context).copyWith(
+  //                           color: AppColors.primaryGreen,
+  //                           fontSize: responsive.h(2.4),
+  //                           fontWeight: FontWeight.w700,
+  //                         ),
+  //                       ),
+  //                     ],
+  //                   ),
+  //                 ),
+  //               ),
+  //               Text(
+  //                 'Trip summary',
+  //                 style: AppTextStyles.small(context).copyWith(
+  //                   color: AppColors.primaryGreen,
+  //                   fontWeight: FontWeight.w600,
+  //                 ),
+  //               ),
+  //             ],
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')} ${_months[date.month - 1]} ${date.year}';

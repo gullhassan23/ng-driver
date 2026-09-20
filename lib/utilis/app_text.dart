@@ -67,7 +67,7 @@ class AppText {
   // Sign In
   static const String welcomeBack = 'Welcome back';
   static const String driver = 'Driver!';
-    static String turnOnLocation = "Turn On Location Services";
+  static String turnOnLocation = "Turn On Location Services";
   static const String email = 'Email';
   static const String driverDetail = 'Driver Details';
   static const String entervehicleinfo = 'Enter your vehicle information';
@@ -98,6 +98,8 @@ class AppText {
   static const String firstName = 'First name';
   static const String lastName = 'Last name';
   static const String password = 'Password';
+  static const String confirm = 'Confirm';
+  
   static const String confirmPassword = 'Confirm password';
   static const String signUp = 'Sign Up';
   static const String retry = 'Retry';
@@ -137,11 +139,12 @@ class AppText {
   static const String requestsandRespond = "Requests and Respond";
   static const String completed = 'Completed';
   static const String cancelled = 'Cancelled';
+
   static const String ride = 'Ride ';
   static const String history = 'History';
   static const String pickup = 'Pickup';
   static const String dropOff = 'Drop-off';
-
+  static const String details = "Details";
   static const String dollar = '\$';
 
   static const String km = 'km';

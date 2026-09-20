@@ -3,7 +3,7 @@ import 'package:get/get.dart';
 import 'package:ngtowncardriver/views/profile/profile_view.dart';
 import 'package:ngtowncardriver/views/reservations/pending_reservation.dart';
 import 'package:ngtowncardriver/views/reservations/reservation_history.dart';
-import 'package:ngtowncardriver/views/rides/reviews_ratings_view.dart';
+import 'package:ngtowncardriver/views/reviews/reviews_ratings_view.dart';
 import 'package:ngtowncardriver/views/rides/rides_history.dart';
 import 'package:ngtowncardriver/views/settings/driver_details_view.dart';
 import 'package:ngtowncardriver/widgets/constants/delete_acc_section.dart';

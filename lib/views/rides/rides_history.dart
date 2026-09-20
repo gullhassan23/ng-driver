@@ -4,10 +4,12 @@ import 'package:ngtowncardriver/controllers/rides_history_controller.dart';
 import 'package:ngtowncardriver/responsiveness/responsive_repo.dart';
 import 'package:ngtowncardriver/utilis/app_colors.dart';
 import 'package:ngtowncardriver/utilis/app_text.dart';
+
 import 'package:ngtowncardriver/utilis/app_text_styles.dart';
 import 'package:ngtowncardriver/utilis/firestore_paths.dart';
-import 'package:ngtowncardriver/widgets/app_icon_button_widget.dart';
+
 import 'package:ngtowncardriver/widgets/app_ride_history_widget.dart';
+import 'package:ngtowncardriver/widgets/header/header.dart';
 
 class RidesHistory extends GetView<RidesHistoryController> {
   const RidesHistory({super.key});
@@ -49,7 +51,12 @@ class RidesHistory extends GetView<RidesHistoryController> {
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(context, responsive),
+            AppHeader(
+              canPop: true,
+              responsive: responsive,
+              title: AppText.ride,
+              subtitle: AppText.history,
+            ),
             SizedBox(height: responsive.h(2)),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: responsive.w(3)),
@@ -134,68 +141,6 @@ class RidesHistory extends GetView<RidesHistoryController> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context, ResponsiveRepo responsive) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: responsive.w(3),
-        right: responsive.w(3),
-        top: responsive.h(1),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AppIconButtonWidget(
-            icon: Icons.arrow_back,
-            onPressed: () => Get.back(),
-            backgroundColor: AppColors.primaryGreen,
-            iconColor: AppColors.black,
-            width: responsive.w(10),
-            height: responsive.w(10),
-            borderRadius: responsive.w(3),
-          ),
-          SizedBox(width: responsive.w(3)),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    children: [
-                      TextSpan(
-                        text: AppText.ride,
-                        style: AppTextStyles.large(context).copyWith(
-                          color: AppColors.white,
-                          height: 1,
-                        ),
-                      ),
-                      TextSpan(
-                        text: AppText.history,
-                        style: AppTextStyles.large(context).copyWith(
-                          color: AppColors.primaryGreen,
-                          height: 1,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: responsive.h(0.2)),
-                Text(
-                  AppText.rideHistorySubtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.whiteSmall(context).copyWith(
-                    fontSize: responsive.h(1.45),
-                    color: AppColors.progressInactive,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }

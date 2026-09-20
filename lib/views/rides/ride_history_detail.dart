@@ -3,10 +3,12 @@ import 'package:get/get.dart';
 import 'package:ngtowncardriver/models/ride_model.dart';
 import 'package:ngtowncardriver/responsiveness/responsive_repo.dart';
 import 'package:ngtowncardriver/utilis/app_colors.dart';
+import 'package:ngtowncardriver/utilis/app_text.dart';
 import 'package:ngtowncardriver/utilis/app_text_styles.dart';
 import 'package:ngtowncardriver/utilis/firestore_paths.dart';
 import 'package:ngtowncardriver/widgets/app_icon_button_widget.dart';
 import 'package:ngtowncardriver/widgets/app_ride_history_widget.dart';
+import 'package:ngtowncardriver/widgets/header/header.dart';
 
 class RideHistoryDetailView extends StatelessWidget {
   const RideHistoryDetailView({super.key, required this.ride});
@@ -48,51 +50,42 @@ class RideHistoryDetailView extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.dashboardBackground,
-      appBar: AppBar(
-        backgroundColor: AppColors.dashboardBackground,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        leading: AppIconButtonWidget(
-          icon: Icons.arrow_back,
-          onPressed: () => Get.back(),
-          backgroundColor: AppColors.primaryGreen,
-          iconColor: AppColors.black,
-          width: responsive.w(10),
-          height: responsive.h(5),
-          borderRadius: responsive.w(3),
+
+      body: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.symmetric(horizontal: responsive.w(3)),
+          children: [
+            AppHeader(
+              responsive: responsive,
+              title: AppText.ride,
+              subtitle: AppText.details,
+              canPop: true,
+            ),
+            SizedBox(height: responsive.h(1)),
+            AppRideHistoryCardWidget(
+              pickupLocation: ride.pickupLocation.isEmpty
+                  ? 'Pickup'
+                  : ride.pickupLocation,
+              dropOffLocation: ride.dropoffLocation.isEmpty
+                  ? 'Drop-off'
+                  : ride.dropoffLocation,
+              stopLocations: ride.stops
+                  .map(
+                    (stop) => stop.location.trim().isEmpty
+                        ? 'Stop ${stop.order}'
+                        : stop.location,
+                  )
+                  .toList(),
+              date: when == null ? '—' : _formatDate(when),
+              time: when == null ? '' : _formatTime(when),
+              fare: ride.formattedFare,
+              distance: ride.formattedDistance,
+              duration: ride.formattedDuration,
+              status: isCancelled ? 'Cancelled' : 'Completed',
+              isCancelled: isCancelled,
+            ),
+          ],
         ),
-        title: Text(
-          'Ride Details',
-          style: AppTextStyles.whiteMedium(context),
-        ),
-      ),
-      body: ListView(
-        padding: EdgeInsets.symmetric(horizontal: responsive.w(3)),
-        children: [
-          SizedBox(height: responsive.h(1)),
-          AppRideHistoryCardWidget(
-            pickupLocation: ride.pickupLocation.isEmpty
-                ? 'Pickup'
-                : ride.pickupLocation,
-            dropOffLocation: ride.dropoffLocation.isEmpty
-                ? 'Drop-off'
-                : ride.dropoffLocation,
-            stopLocations: ride.stops
-                .map(
-                  (stop) => stop.location.trim().isEmpty
-                      ? 'Stop ${stop.order}'
-                      : stop.location,
-                )
-                .toList(),
-            date: when == null ? '—' : _formatDate(when),
-            time: when == null ? '' : _formatTime(when),
-            fare: ride.formattedFare,
-            distance: ride.formattedDistance,
-            duration: ride.formattedDuration,
-            status: isCancelled ? 'Cancelled' : 'Completed',
-            isCancelled: isCancelled,
-          ),
-        ],
       ),
     );
   }

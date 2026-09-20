@@ -8,6 +8,7 @@ import 'package:ngtowncardriver/utilis/app_text_styles.dart';
 import 'package:ngtowncardriver/views/reservations/reservation_detail_view.dart';
 import 'package:ngtowncardriver/widgets/app_icon_button_widget.dart';
 import 'package:ngtowncardriver/widgets/app_ride_history_widget.dart';
+import 'package:ngtowncardriver/widgets/header/header.dart';
 
 class ConfirmReservation extends GetView<ConfirmReservationController> {
   const ConfirmReservation({super.key});
@@ -21,7 +22,12 @@ class ConfirmReservation extends GetView<ConfirmReservationController> {
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(context, responsive),
+            AppHeader(
+              responsive: responsive,
+              title: AppText.confirm,
+              subtitle: AppText.reservation,
+              canPop: false,
+            ),
             SizedBox(height: responsive.h(2)),
             Expanded(
               child: Obx(() {
@@ -82,65 +88,6 @@ class ConfirmReservation extends GetView<ConfirmReservationController> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildHeader(BuildContext context, ResponsiveRepo responsive) {
-    final canPop = Navigator.of(context).canPop();
-
-    return Padding(
-      padding: EdgeInsets.only(
-        left: responsive.w(canPop ? 1 : 4),
-        right: responsive.w(4),
-        top: responsive.h(1),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (canPop)
-            AppIconButtonWidget(
-              icon: Icons.arrow_back,
-              onPressed: () => Get.back(),
-              backgroundColor: AppColors.primaryGreen,
-              iconColor: AppColors.black,
-              width: responsive.w(10),
-              height: responsive.w(10),
-              borderRadius: responsive.w(3),
-            ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    children: [
-                      TextSpan(
-                        text: 'Confirm ',
-                        style: AppTextStyles.large(
-                          context,
-                        ).copyWith(color: AppColors.white),
-                      ),
-                      TextSpan(
-                        text: AppText.reservation,
-                        style: AppTextStyles.large(
-                          context,
-                        ).copyWith(color: AppColors.primaryGreen),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: responsive.h(0.2)),
-                Text(
-                  'View your confirmed reservations',
-                  style: AppTextStyles.small(
-                    context,
-                  ).copyWith(color: AppColors.white.withValues(alpha: 0.55)),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
