@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:lottie/lottie.dart';
 
 import '../../controllers/dashboard_controller.dart';
 import '../../controllers/pending_reservation_controller.dart';
@@ -11,6 +10,7 @@ import '../../utilis/app_text_styles.dart';
 import '../../widgets/app_ride_history_widget.dart';
 import '../../widgets/location/location_permission_handler.dart';
 import '../../widgets/online_status_toggle.dart';
+import '../../widgets/waiting_map_lottie.dart';
 import 'new_reservation_request_view.dart';
 
 class PendingReservation extends StatefulWidget {
@@ -51,6 +51,7 @@ class _PendingReservationState extends State<PendingReservation>
 
     return Scaffold(
       backgroundColor: AppColors.dashboardBackground,
+      // clipBehavior: Clip.hardEdge,
       appBar: AppBar(
         backgroundColor: AppColors.dashboardBackground,
         elevation: 0,
@@ -122,15 +123,7 @@ class _PendingReservationState extends State<PendingReservation>
         final reservations = controller.pendingReservations;
 
         if (reservations.isEmpty) {
-          return SizedBox.expand(
-            child: Lottie.asset(
-              'assets/lottie/map_lottie.json',
-              width: double.infinity,
-              height: double.infinity,
-              fit: BoxFit.cover,
-              repeat: true,
-            ),
-          );
+          return const WaitingMapLottie();
         }
 
         return ListView.builder(

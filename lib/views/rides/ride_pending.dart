@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:lottie/lottie.dart';
 
 import '../../controllers/dashboard_controller.dart';
 import '../../models/ride_model.dart';
@@ -9,6 +8,7 @@ import '../../utilis/app_colors.dart';
 import '../../utilis/app_text_styles.dart';
 import '../../widgets/location/location_permission_handler.dart';
 import '../../widgets/online_status_toggle.dart';
+import '../../widgets/waiting_map_lottie.dart';
 import 'ride_request_preview_sheet.dart';
 
 class RidePending extends StatefulWidget {
@@ -46,6 +46,7 @@ class _RidePendingState extends State<RidePending> with WidgetsBindingObserver {
 
     return Scaffold(
       backgroundColor: AppColors.dashboardBackground,
+      // clipBehavior: Clip.hardEdge,
       appBar: AppBar(
         backgroundColor: AppColors.dashboardBackground,
         elevation: 0,
@@ -134,15 +135,7 @@ class _PendingRidesBody extends GetView<DashboardController> {
       final rides = controller.rides.toList();
 
       if (rides.isEmpty) {
-        return SizedBox.expand(
-          child: Lottie.asset(
-            'assets/lottie/map_lottie.json',
-            width: double.infinity,
-            height: double.infinity,
-            fit: BoxFit.cover,
-            repeat: true,
-          ),
-        );
+        return const WaitingMapLottie();
       }
 
       return ListView.separated(

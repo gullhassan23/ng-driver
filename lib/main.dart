@@ -12,6 +12,7 @@ import 'package:ngtowncardriver/controllers/connectivity_controller.dart';
 import 'package:ngtowncardriver/controllers/location_permission_controller.dart';
 import 'package:ngtowncardriver/config/app_config.dart';
 import 'package:ngtowncardriver/firebase_options.dart';
+import 'package:ngtowncardriver/routes/app_pages.dart';
 import 'package:ngtowncardriver/routes/app_routes.dart';
 import 'package:ngtowncardriver/services/directions_service.dart';
 import 'package:ngtowncardriver/services/location_service.dart';
@@ -48,9 +49,7 @@ Future<void> main() async {
     debugPrint(
       'Firebase connected to project: ${Firebase.app().options.projectId}',
     );
-    debugPrint(
-      'Google Maps API key loaded: ${AppConfig.hasGoogleMapsApiKey}',
-    );
+    debugPrint('Google Maps API key loaded: ${AppConfig.hasGoogleMapsApiKey}');
   }
 
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
@@ -79,7 +78,7 @@ class NgTownDriverApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       initialRoute: AppRoutes.sessionRestore,
-      getPages: AppRoutes.pages,
+      getPages: AppPages.pages,
       initialBinding: BindingsBuilder(() {
         Get.put<AuthController>(AuthController(), permanent: true);
         Get.put<ConnectivityController>(
@@ -109,17 +108,13 @@ class NgTownDriverApp extends StatelessWidget {
                 return const SizedBox.shrink();
               }
               // Active Ride keeps CTAs usable — soft banner instead of block.
-              final onActiveRide =
-                  Get.currentRoute == AppRoutes.activeRide;
+              final onActiveRide = Get.currentRoute == AppRoutes.activeRide;
               if (onActiveRide) {
                 return const Positioned(
                   top: 0,
                   left: 0,
                   right: 0,
-                  child: SafeArea(
-                    bottom: false,
-                    child: OfflineBanner(),
-                  ),
+                  child: SafeArea(bottom: false, child: OfflineBanner()),
                 );
               }
               return const Positioned.fill(child: NoInternetOverlay());

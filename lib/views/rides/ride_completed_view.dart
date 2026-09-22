@@ -7,7 +7,7 @@ import '../../responsiveness/responsive_repo.dart';
 import '../../utilis/app_colors.dart';
 import '../../utilis/app_text.dart';
 import '../../utilis/app_text_styles.dart';
-import '../../widgets/app_icon_button_widget.dart';
+
 import '../../widgets/buttons/app_button_widget.dart';
 
 class RideCompletedView extends GetView<RideCompletedController> {

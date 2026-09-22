@@ -1,28 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:ngtowncardriver/constants/global.dart';
+import 'package:ngtowncardriver/views/rides/distance_time_card.dart';
+import 'package:ngtowncardriver/views/rides/map_button.dart';
+import 'package:ngtowncardriver/views/rides/ride_arrived_banner.dart';
+import 'package:ngtowncardriver/views/rides/safery_banner.dart';
+import 'package:ngtowncardriver/widgets/address/address_row.dart';
+import 'package:ngtowncardriver/widgets/ride/cancel_button.dart';
+import 'package:ngtowncardriver/widgets/ride/chat_button.dart';
+import 'package:ngtowncardriver/widgets/ride/primary_button.dart';
 import 'package:url_launcher/url_launcher.dart';
-
 import '../../config/app_config.dart';
 import '../../controllers/active_ride_controller.dart';
 import '../../controllers/location_permission_controller.dart';
-import '../../models/ride_model.dart';
 import '../../routes/app_routes.dart';
 import '../../utilis/app_colors.dart';
 import '../../widgets/location/location_permission_banner.dart';
 import '../../widgets/reactive_app_map.dart';
 
-String _stopRowText(RideModel ride, int index) {
-  if (index < 0 || index >= ride.stops.length) return 'Stop';
-  final address = ride.stops[index].location.trim();
-  final label = address.isEmpty ? 'Stop ${index + 1}' : address;
-  if (!ride.isTripInProgress) return 'Stop ${index + 1} · $label';
-  if (index < ride.currentStopIndex) return 'Stop ${index + 1} ✓ · $label';
-  if (index == ride.currentStopIndex) {
-    return 'Stop ${index + 1} · Current · $label';
-  }
-  return 'Stop ${index + 1} · $label';
-}
+
 
 class ActiveRideView extends GetView<ActiveRideController> {
   const ActiveRideView({super.key});
@@ -154,7 +151,7 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                             if (controller.showRiderArrivedBanner)
                               const Padding(
                                 padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
-                                child: _RiderArrivedBanner(),
+                                child: RiderArrivedBanner(),
                               ),
                             if (controller.routeEtaText.value.isNotEmpty ||
                                 controller.routeDistanceText.value.isNotEmpty)
@@ -165,7 +162,7 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                   16,
                                   10,
                                 ),
-                                child: _RouteMetaChip(
+                                child: RouteMetaChip(
                                   eta: controller.routeEtaText.value,
                                   distance: controller.routeDistanceText.value,
                                 ),
@@ -177,7 +174,7 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                               child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-                                  _RoundMapButton(
+                                  RoundMapButton(
                                     icon: Icons.near_me_rounded,
                                     background: AppColors.white,
                                     iconColor: AppColors.black,
@@ -198,7 +195,7 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                               padding: const EdgeInsets.only(
                                                 right: 10,
                                               ),
-                                              child: _RoundMapButton(
+                                              child: RoundMapButton(
                                                 icon: Icons.my_location_rounded,
                                                 background:
                                                     AppColors.primaryGreen,
@@ -213,7 +210,7 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                     );
                                   }),
                                   Expanded(
-                                    child: _SafetyBanner(
+                                    child: SafetyBanner(
                                       onTap: () async {
                                         final trimmed =
                                             AppConfig.driverPoliciesUrl.trim();
@@ -274,7 +271,7 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                                 0xFF3A3A3C,
                                               ),
                                               child: Text(
-                                                _initials(ride.customerName),
+                                                initials(ride.customerName),
                                                 style: GoogleFonts.inter(
                                                   color: AppColors.white,
                                                   fontWeight: FontWeight.w600,
@@ -303,7 +300,7 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                       Expanded(
                                         child: Column(
                                           children: [
-                                            _AddressRow(
+                                            AddressRow(
                                               asset:
                                                   'assets/images/location.webp',
                                               text: ride.pickupLocation.isEmpty
@@ -314,14 +311,14 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                                 i < ride.stops.length;
                                                 i++) ...[
                                               const SizedBox(height: 10),
-                                              _AddressRow(
+                                              AddressRow(
                                                 asset:
                                                     'assets/images/stop.png',
-                                                text: _stopRowText(ride, i),
+                                                text: stopRowText(ride, i),
                                               ),
                                             ],
                                             const SizedBox(height: 10),
-                                            _AddressRow(
+                                            AddressRow(
                                               asset: 'assets/images/flag.webp',
                                               text: ride.dropoffLocation.isEmpty
                                                   ? 'Dropoff'
@@ -333,13 +330,9 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                       const SizedBox(width: 10),
                                       Column(
                                         children: [
-                                          // _LimeActionButton(
-                                          //   icon: Icons.phone_rounded,
-                                          //   onTap:
-                                          //       controller.onContactUnavailable,
-                                          // ),
+                                      
                                           Obx(
-                                            () => _LimeActionButton(
+                                            () => LimeActionButton(
                                               icon: Icons.chat_bubble_rounded,
                                               onTap: controller.openChat,
                                               badgeCount: controller
@@ -375,7 +368,7 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                     children: [
                                       if (controller.showPrimaryCta) ...[
                                         Expanded(
-                                          child: _PrimaryCtaButton(
+                                          child: PrimaryCtaButton(
                                             label: controller.primaryCtaLabel,
                                             loading:
                                                 controller.isUpdating.value,
@@ -451,7 +444,7 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                         ),
                                         const SizedBox(width: 10),
                                       ],
-                                      _CancelSquareButton(
+                                      CancelSquareButton(
                                         onTap: controller.isUpdating.value
                                             ? null
                                             : controller.onCancelRide,
@@ -475,360 +468,20 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
     );
   }
 
-  String _initials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty || parts.first.isEmpty) return '?';
-    if (parts.length == 1) return parts.first[0].toUpperCase();
-    return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
-  }
-}
 
-class _RiderArrivedBanner extends StatelessWidget {
-  const _RiderArrivedBanner();
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF163A2A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: AppColors.primaryGreen.withValues(alpha: 0.5),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Passenger has arrived',
-            style: GoogleFonts.inter(
-              color: AppColors.primaryGreen,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Your passenger has arrived at the pickup location.',
-            style: GoogleFonts.inter(
-              color: AppColors.white,
-              fontSize: 12,
-              height: 1.3,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
-class _RouteMetaChip extends StatelessWidget {
-  const _RouteMetaChip({required this.eta, required this.distance});
 
-  final String eta;
-  final String distance;
 
-  @override
-  Widget build(BuildContext context) {
-    final parts = <String>[
-      if (eta.isNotEmpty) eta,
-      if (distance.isNotEmpty) distance,
-    ];
 
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF2C2C2E),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          parts.join(' · '),
-          style: GoogleFonts.inter(
-            color: AppColors.white,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}
 
-class _SafetyBanner extends StatelessWidget {
-  const _SafetyBanner({required this.onTap});
 
-  final VoidCallback onTap;
 
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF2C2C2E),
-      borderRadius: BorderRadius.circular(8),
-      child: GestureDetector(
-        onTap: onTap,
-        // borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          child: Row(
-            children: [
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryGreen,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: const Icon(
-                  Icons.shield_outlined,
-                  size: 16,
-                  color: AppColors.black,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Learn more how we protect you during rides',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
-                    color: AppColors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    height: 1.25,
-                  ),
-                ),
-              ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.white,
-                size: 20,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
-class _RoundMapButton extends StatelessWidget {
-  const _RoundMapButton({
-    required this.icon,
-    required this.background,
-    required this.iconColor,
-    required this.onTap,
-  });
 
-  final IconData icon;
-  final Color background;
-  final Color iconColor;
-  final VoidCallback onTap;
 
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: background,
-      surfaceTintColor: Colors.transparent,
-      shape: const CircleBorder(),
-      elevation: 2,
-      clipBehavior: Clip.antiAlias,
-      child: GestureDetector(
-        // customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: Ink(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(color: background, shape: BoxShape.circle),
-          child: Icon(icon, color: iconColor, size: 22),
-        ),
-      ),
-    );
-  }
-}
 
-class _AddressRow extends StatelessWidget {
-  const _AddressRow({required this.asset, required this.text});
 
-  final String asset;
-  final String text;
 
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Image.asset(asset, width: 26, height: 26, fit: BoxFit.contain),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              color: AppColors.white,
-              fontSize: 12,
-              height: 1.3,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
 
-class _LimeActionButton extends StatelessWidget {
-  const _LimeActionButton({
-    required this.icon,
-    required this.onTap,
-    this.badgeCount = 0,
-  });
-
-  final IconData icon;
-  final VoidCallback onTap;
-  final int badgeCount;
-
-  @override
-  Widget build(BuildContext context) {
-    final showBadge = badgeCount > 0;
-    final label = badgeCount > 99 ? '99+' : '$badgeCount';
-
-    return Material(
-      color: AppColors.primaryGreen,
-      shape: const CircleBorder(),
-      child: GestureDetector(
-        // customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.center,
-            children: [
-              Icon(icon, color: AppColors.black, size: 22),
-              if (showBadge)
-                Positioned(
-                  top: -2,
-                  right: -2,
-                  child: Container(
-                    constraints: const BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryRed,
-                      borderRadius: BorderRadius.circular(9),
-                      border: Border.all(
-                        color: AppColors.dashboardBackground,
-                        width: 1.5,
-                      ),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      label,
-                      style: const TextStyle(
-                        color: AppColors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        height: 1,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PrimaryCtaButton extends StatelessWidget {
-  const _PrimaryCtaButton({
-    required this.label,
-    required this.loading,
-    required this.showProgressTint,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool loading;
-  final bool showProgressTint;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final isStartRide = showProgressTint;
-    final background = isStartRide
-        ? AppColors.primaryGreen
-        : const Color(0xFF2F6FED);
-    final foreground = isStartRide ? AppColors.black : AppColors.white;
-
-    return Material(
-      color: background,
-      borderRadius: BorderRadius.circular(10),
-      child: GestureDetector(
-        onTap: loading ? null : onTap,
-        // borderRadius: BorderRadius.circular(10),
-        child: Ink(
-          height: 52,
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Center(
-            child: loading
-                ? SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.4,
-                      color: foreground,
-                    ),
-                  )
-                : Text(
-                    label,
-                    style: GoogleFonts.inter(
-                      color: foreground,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CancelSquareButton extends StatelessWidget {
-  const _CancelSquareButton({this.onTap});
-
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFF2C2C2E),
-      borderRadius: BorderRadius.circular(10),
-      child: GestureDetector(
-        onTap: onTap,
-        // borderRadius: BorderRadius.circular(10),
-        child: const SizedBox(
-          width: 52,
-          height: 52,
-          child: Icon(
-            Icons.close_rounded,
-            color: AppColors.primaryRed,
-            size: 26,
-          ),
-        ),
-      ),
-    );
-  }
 }

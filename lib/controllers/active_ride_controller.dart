@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:ngtowncardriver/routes/app_navigator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/reservation_model.dart';
@@ -35,11 +36,13 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
     RideStatusEvaluator? statusEvaluator,
     ChatService? chatService,
   }) : _firestore = firestore ?? FirestoreService(),
-       _directions = directions ??
+       _directions =
+           directions ??
            (Get.isRegistered<DirectionsService>()
                ? Get.find<DirectionsService>()
                : DirectionsService()),
-       _location = location ??
+       _location =
+           location ??
            (Get.isRegistered<LocationService>()
                ? Get.find<LocationService>()
                : LocationService()),
@@ -145,8 +148,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
   /// Stable camera seed for [AppMapWidget]. Prefer pickup → dropoff → cache.
   /// Never falls back to Seattle in production (avoids wrong-city flash).
   LatLng get initialCameraTarget =>
-      _frozenInitialCameraTarget ??
-      const LatLng(0, 0);
+      _frozenInitialCameraTarget ?? const LatLng(0, 0);
 
   void _freezeInitialCameraTarget(LatLng? target) {
     if (_frozenInitialCameraTarget != null || target == null) return;
@@ -167,8 +169,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
   /// Arrived at pickup, waiting for passenger and/or Start Ride — keep map still.
   bool get isWaitingAtPickup {
     if (ride.value?.isTripInProgress ?? false) return false;
-    return _pickupArrivalWritten ||
-        (ride.value?.isWaitingAtPickup ?? false);
+    return _pickupArrivalWritten || (ride.value?.isWaitingAtPickup ?? false);
   }
 
   bool get isRideStarted => ride.value?.isTripInProgress ?? false;
@@ -290,13 +291,15 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
       } else {
         final uid = Get.find<AuthController>().uid;
         if (uid == null) {
-          Get.offAllNamed(AppRoutes.signIn);
+          // Get.offAllNamed(AppRoutes.signIn);
+          AppNavigator.toSignIn();
           return;
         }
         final driver = await _firestore.fetchDriver(uid);
         final rideId = driver?.currentRideId;
         if (rideId == null || rideId.isEmpty) {
-          Get.offAllNamed(AppRoutes.dashboard);
+          // Get.offAllNamed(AppRoutes.dashboard);
+          AppNavigator.todashboard();
           return;
         }
         initial = await _firestore.fetchRide(rideId);
@@ -340,7 +343,8 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
 
       // Seed marker/camera from stored ride location, then process cache / warmup.
       final storedDriver = initial.driverLatLng;
-      final cached = _location.cachedPosition ??
+      final cached =
+          _location.cachedPosition ??
           (Get.isRegistered<MapWarmupService>()
               ? Get.find<MapWarmupService>().warmPosition
               : null);
@@ -363,9 +367,9 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
           _dropoffIcon == null ||
           _stopIcon == null) {
         try {
-          await MarkerIconCache.instance
-              .ensureLoaded()
-              .timeout(const Duration(milliseconds: 900));
+          await MarkerIconCache.instance.ensureLoaded().timeout(
+            const Duration(milliseconds: 900),
+          );
         } catch (_) {}
         _applyCachedIconsIfReady();
       }
@@ -416,42 +420,46 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
 
   void _watchRide(String rideId) {
     _rideSubscription?.cancel();
-    _rideSubscription = _firestore.watchRide(rideId).listen(
-      (updated) {
-        if (_exiting) return;
+    _rideSubscription = _firestore
+        .watchRide(rideId)
+        .listen(
+          (updated) {
+            if (_exiting) return;
 
-        if (updated == null) {
-          unawaited(
-            _clearAndExit(message: 'This ride is no longer available.'),
-          );
-          return;
-        }
+            if (updated == null) {
+              unawaited(
+                _clearAndExit(message: 'This ride is no longer available.'),
+              );
+              return;
+            }
 
-        // Terminal status first — before any await — so cancel always exits.
-        // Also schedule exit outside this callback to avoid deadlocking on
-        // subscription.cancel() inside the same listen handler.
-        if (_isTerminalRideStatus(updated.status)) {
-          ride.value = updated;
-          if (updated.status.toLowerCase().trim() == RideStatus.completed) {
-            unawaited(_exitAfterRideCompleted(completedRide: updated));
-          } else {
-            unawaited(_clearAndExit(message: _remoteCancelMessage(updated)));
-          }
-          return;
-        }
+            // Terminal status first — before any await — so cancel always exits.
+            // Also schedule exit outside this callback to avoid deadlocking on
+            // subscription.cancel() inside the same listen handler.
+            if (_isTerminalRideStatus(updated.status)) {
+              ride.value = updated;
+              if (updated.status.toLowerCase().trim() == RideStatus.completed) {
+                unawaited(_exitAfterRideCompleted(completedRide: updated));
+              } else {
+                unawaited(
+                  _clearAndExit(message: _remoteCancelMessage(updated)),
+                );
+              }
+              return;
+            }
 
-        unawaited(_onRideSnapshot(updated));
-      },
-      onError: (Object error, StackTrace stack) {
-        if (kDebugMode) {
-          debugPrint('watchRide error: $error\n$stack');
-        }
-        if (!_exiting && !isClosed) {
-          errorMessage.value =
-              'Lost connection to this ride. Check internet and retry.';
-        }
-      },
-    );
+            unawaited(_onRideSnapshot(updated));
+          },
+          onError: (Object error, StackTrace stack) {
+            if (kDebugMode) {
+              debugPrint('watchRide error: $error\n$stack');
+            }
+            if (!_exiting && !isClosed) {
+              errorMessage.value =
+                  'Lost connection to this ride. Check internet and retry.';
+            }
+          },
+        );
   }
 
   void _watchLinkedReservation(RideModel current) {
@@ -506,9 +514,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
     // Reset so _clearAndExit can run its full cleanup path once.
     _exiting = false;
     if (isClosed) return;
-    await _clearAndExit(
-      message: 'Your reservation has been cancelled by user',
-    );
+    await _clearAndExit(message: 'Your reservation has been cancelled by user');
   }
 
   bool _isTerminalRideStatus(String status) =>
@@ -548,9 +554,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
     if (previous != null &&
         previous.status != RideStatus.passengerArriving &&
         updated.status == RideStatus.passengerArriving) {
-      AppSnackbar.info(
-        title: 'Passenger is coming',
-      );
+      AppSnackbar.info(title: 'Passenger is coming');
     }
 
     final arrivedAtPickup =
@@ -607,8 +611,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
       _startEtaTicker(updated);
     }
 
-    final phaseChanged =
-        previous == null || previous.status != updated.status;
+    final phaseChanged = previous == null || previous.status != updated.status;
     final stopProgressChanged =
         previous != null &&
         previous.currentStopIndex != updated.currentStopIndex;
@@ -915,8 +918,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
 
     switch (readiness) {
       case LocationReadiness.serviceDisabled:
-        message =
-            'Turn on location services to track this ride.';
+        message = 'Turn on location services to track this ride.';
         buttonLabel = 'Enable';
         openSettings = _location.openLocationSettings;
       case LocationReadiness.permissionDeniedForever:
@@ -925,8 +927,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
         buttonLabel = 'Settings';
         openSettings = _location.openAppSettings;
       case LocationReadiness.permissionDenied:
-        message =
-            'Location permission is required to track this ride.';
+        message = 'Location permission is required to track this ride.';
         buttonLabel = 'Settings';
         openSettings = _location.openAppSettings;
       case LocationReadiness.ready:
@@ -1549,12 +1550,13 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
           markerId: const MarkerId('pickup'),
           position: pickup,
           anchor: const Offset(0.5, 1.0),
-          infoWindow: InfoWindow(title: 'Pickup', snippet: current.pickupLocation),
+          infoWindow: InfoWindow(
+            title: 'Pickup',
+            snippet: current.pickupLocation,
+          ),
           icon:
               _pickupIcon ??
-              BitmapDescriptor.defaultMarkerWithHue(
-                BitmapDescriptor.hueAzure,
-              ),
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         ),
       );
     }
@@ -1566,12 +1568,13 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
           markerId: const MarkerId('dropoff'),
           position: dropoff,
           anchor: const Offset(0.5, 1.0),
-          infoWindow: InfoWindow(title: 'Dropoff', snippet: current.dropoffLocation),
+          infoWindow: InfoWindow(
+            title: 'Dropoff',
+            snippet: current.dropoffLocation,
+          ),
           icon:
               _dropoffIcon ??
-              BitmapDescriptor.defaultMarkerWithHue(
-                BitmapDescriptor.hueGreen,
-              ),
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
         ),
       );
     }
@@ -1593,9 +1596,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
           ),
           icon:
               _stopIcon ??
-              BitmapDescriptor.defaultMarkerWithHue(
-                BitmapDescriptor.hueOrange,
-              ),
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
         ),
       );
     }
@@ -1631,8 +1632,9 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
 
   Marker _driverMarker(LatLng position) {
     final heading = _lastHeading;
-    final rotation =
-        heading != null && heading >= 0 && !heading.isNaN ? heading : 0.0;
+    final rotation = heading != null && heading >= 0 && !heading.isNaN
+        ? heading
+        : 0.0;
     return Marker(
       markerId: _driverMarkerId,
       position: position,
@@ -1742,8 +1744,8 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
       message: current.isDriverArrived
           ? 'Wait for the passenger to confirm they are coming.'
           : current.isDriverArriving
-              ? 'Arrive at pickup before starting the ride.'
-              : 'This ride cannot be updated right now.',
+          ? 'Arrive at pickup before starting the ride.'
+          : 'This ride cannot be updated right now.',
     );
   }
 
@@ -1801,9 +1803,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
 
       if (isClosed || _exiting) return;
 
-      AppSnackbar.success(
-        title: 'Ride started',
-      );
+      AppSnackbar.success(title: 'Ride started');
       // Route + camera refresh happens once via watchRide phase change.
     } on FirebaseFunctionsException catch (error) {
       if (isClosed) return;
@@ -2026,7 +2026,8 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
       return;
     }
 
-    Get.toNamed(AppRoutes.chat, arguments: rideId);
+    // Get.toNamed(AppRoutes.chat, arguments: rideId);
+    AppNavigator.toChat(rideId);
   }
 
   void _startChatUnreadWatch(String rideId) {
@@ -2034,14 +2035,16 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
     final id = rideId.trim();
     if (id.isEmpty) return;
 
-    _chatUnreadSubscription = _chatService.watchUnreadFromRiderCount(id).listen(
-      (count) {
-        chatUnreadCount.value = count < 0 ? 0 : count;
-      },
-      onError: (_) {
-        chatUnreadCount.value = 0;
-      },
-    );
+    _chatUnreadSubscription = _chatService
+        .watchUnreadFromRiderCount(id)
+        .listen(
+          (count) {
+            chatUnreadCount.value = count < 0 ? 0 : count;
+          },
+          onError: (_) {
+            chatUnreadCount.value = 0;
+          },
+        );
   }
 
   void _stopChatUnreadWatch() {
@@ -2069,10 +2072,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
     );
 
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-      AppSnackbar.error(
-        title: 'Navigation',
-        message: 'Could not open maps.',
-      );
+      AppSnackbar.error(title: 'Navigation', message: 'Could not open maps.');
     }
   }
 
@@ -2105,10 +2105,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
   }) {
     final ride = completedRide ?? this.ride.value;
     if (fromReservation || ride?.isFromReservation == true) {
-      return _clearAndExit(
-        message: 'Reservation completed',
-        success: true,
-      );
+      return _clearAndExit(message: 'Reservation completed', success: true);
     }
     return _clearAndExit(completedRide: ride);
   }
@@ -2144,12 +2141,16 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
     // clearCurrentRideId used to set _exiting=true and leave the driver
     // stuck on the map forever (later cancel snapshots were ignored).
     if (completedRide != null) {
-      Get.offAllNamed(
-        AppRoutes.completedRideDetail,
-        arguments: {
-          'ride': completedRide,
-          'returnToDashboard': true,
-        },
+      // Get.offAllNamed(
+      //   AppRoutes.completedRideDetail,
+      //   arguments: {
+      //     'ride': completedRide,
+      //     'returnToDashboard': true,
+      //   },
+      // );
+      AppNavigator.toCompletedRideDetail(
+        ride: completedRide,
+        returnToDashboard: true,
       );
     } else {
       // Prefer popping back to the shell when Active Ride was pushed with

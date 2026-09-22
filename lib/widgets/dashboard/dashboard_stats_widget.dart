@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:ngtowncardriver/routes/app_navigator.dart';
 import 'package:ngtowncardriver/routes/app_routes.dart';
 import 'package:ngtowncardriver/utilis/app_colors.dart';
 import 'package:ngtowncardriver/utilis/app_text_styles.dart';
@@ -33,7 +34,7 @@ class DashboardStatsWidget extends StatelessWidget {
           Expanded(
             child: GestureDetector(
               onTap: () {
-                Get.toNamed(AppRoutes.rideCompleted);
+                AppNavigator.torideHistory();
               },
               child: Container(
                 constraints: BoxConstraints(minHeight: responsive.h(10)),

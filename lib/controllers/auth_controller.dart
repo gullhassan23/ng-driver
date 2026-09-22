@@ -16,11 +16,9 @@ import 'location_permission_controller.dart';
 import 'signup_controller.dart';
 
 class AuthController extends GetxController {
-  AuthController({
-    FirebaseAuth? auth,
-    FirestoreService? firestore,
-  })  : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirestoreService();
+  AuthController({FirebaseAuth? auth, FirestoreService? firestore})
+    : _auth = auth ?? FirebaseAuth.instance,
+      _firestore = firestore ?? FirestoreService();
 
   final FirebaseAuth _auth;
   final FirestoreService _firestore;
@@ -105,8 +103,7 @@ class AuthController extends GetxController {
 
     try {
       await awaitAuthReady();
-      final route =
-          isSignedIn ? await resolveStartRoute() : AppRoutes.signIn;
+      final route = isSignedIn ? await resolveStartRoute() : AppRoutes.signIn;
       await navigatePostAuth(route);
     } finally {
       _isColdStartRunning = false;
@@ -141,8 +138,7 @@ class AuthController extends GetxController {
 
     if (route == AppRoutes.activeRide) {
       final id = uid;
-      final driver =
-          id == null ? null : await _firestore.fetchDriver(id);
+      final driver = id == null ? null : await _firestore.fetchDriver(id);
       final rideId = driver?.currentRideId?.trim();
       await Get.offAllNamed(
         route,
@@ -154,10 +150,7 @@ class AuthController extends GetxController {
       return;
     }
 
-    await Get.offAllNamed(
-      route,
-      predicate: (_) => false,
-    );
+    await Get.offAllNamed(route, predicate: (_) => false);
   }
 
   @override
@@ -200,10 +193,7 @@ class AuthController extends GetxController {
     isLoading.value = true;
 
     try {
-      await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      await _auth.signInWithEmailAndPassword(email: email, password: password);
 
       await _routeAfterSignIn();
     } on FirebaseAuthException catch (error) {
@@ -322,7 +312,7 @@ class AuthController extends GetxController {
         title: 'Sign up',
         message: AuthMessages.signupSuccess,
       );
-      Get.offAllNamed(AppRoutes.signUpDetail);
+      Get.offAllNamed(AppRoutes.driverRegistration);
     } on FirebaseAuthException catch (error) {
       _showError(
         AuthMessages.fromFirebase(error.code, AuthFlow.signup),
@@ -450,8 +440,7 @@ class AuthController extends GetxController {
     final user = _auth.currentUser;
     final email = user?.email?.trim();
     final id = user?.uid;
-    final resolvedPassword =
-        (password ?? deleteAccountPassword.text).trim();
+    final resolvedPassword = (password ?? deleteAccountPassword.text).trim();
 
     if (user == null || email == null || email.isEmpty || id == null) {
       _showError('You are not signed in.', title: 'Delete failed');
@@ -459,10 +448,7 @@ class AuthController extends GetxController {
     }
 
     if (resolvedPassword.isEmpty) {
-      _showError(
-        'Enter your password to confirm.',
-        title: 'Delete failed',
-      );
+      _showError('Enter your password to confirm.', title: 'Delete failed');
       return false;
     }
 
@@ -489,10 +475,7 @@ class AuthController extends GetxController {
       }
 
       await user.reauthenticateWithCredential(
-        EmailAuthProvider.credential(
-          email: email,
-          password: resolvedPassword,
-        ),
+        EmailAuthProvider.credential(email: email, password: resolvedPassword),
       );
 
       // Soft pre-clean while still authenticated (best effort).
@@ -564,7 +547,7 @@ class AuthController extends GetxController {
   Future<String> resolveStartRoute() async {
     final route = await resolvePostAuthRoute(signInOnError: true);
 
-    if (route == AppRoutes.signUpDetail) {
+    if (route == AppRoutes.driverRegistration) {
       await signOut(navigate: false);
       return AppRoutes.signIn;
     }
@@ -586,24 +569,24 @@ class AuthController extends GetxController {
       const timeout = Duration(seconds: 5);
 
       final driverFuture = _firestore.fetchDriver(id).timeout(timeout);
-      final infoFuture =
-          _firestore.fetchDriverInformation(id).timeout(timeout);
+      final infoFuture = _firestore.fetchDriverInformation(id).timeout(timeout);
 
       final driver = await driverFuture;
       final info = await infoFuture;
 
       if (driver == null) {
         rememberApproval(false);
-        return AppRoutes.signUpDetail;
+        return AppRoutes.driverRegistration;
       }
 
-      final needsDetails = info == null ||
+      final needsDetails =
+          info == null ||
           info.vehicleRegistration.isEmpty ||
           info.vehicleType.isEmpty;
 
       if (needsDetails) {
         rememberApproval(false);
-        return AppRoutes.signUpDetail;
+        return AppRoutes.driverRegistration;
       }
 
       if (!driver.isApproved) {
@@ -616,8 +599,9 @@ class AuthController extends GetxController {
       final activeRideId = driver.currentRideId;
       if (activeRideId != null && activeRideId.isNotEmpty) {
         try {
-          final activeRide =
-              await _firestore.fetchRide(activeRideId).timeout(timeout);
+          final activeRide = await _firestore
+              .fetchRide(activeRideId)
+              .timeout(timeout);
 
           if (activeRide != null && activeRide.isActiveAssigned) {
             return AppRoutes.activeRide;

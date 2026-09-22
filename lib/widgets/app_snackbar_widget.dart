@@ -12,7 +12,7 @@ class AppSnackbar {
     required String title,
     String message = '',
     AppSnackbarType type = AppSnackbarType.info,
-    SnackPosition position = SnackPosition.BOTTOM,
+    SnackPosition position = SnackPosition.TOP,
     Duration duration = const Duration(seconds: 3),
     String? actionLabel,
     VoidCallback? onAction,
@@ -42,10 +42,7 @@ class AppSnackbar {
       mainButton: actionLabel != null && onAction != null
           ? TextButton(
               onPressed: onAction,
-              child: Text(
-                actionLabel,
-                style: TextStyle(color: colorText),
-              ),
+              child: Text(actionLabel, style: TextStyle(color: colorText)),
             )
           : null,
     );
@@ -108,4 +105,3 @@ class AppSnackbar {
     );
   }
 }
- 

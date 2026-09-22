@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
+
 import 'package:ngtowncardriver/models/ride_model.dart';
 import 'package:ngtowncardriver/responsiveness/responsive_repo.dart';
 import 'package:ngtowncardriver/utilis/app_colors.dart';
 import 'package:ngtowncardriver/utilis/app_text.dart';
-import 'package:ngtowncardriver/utilis/app_text_styles.dart';
+
 import 'package:ngtowncardriver/utilis/firestore_paths.dart';
-import 'package:ngtowncardriver/widgets/app_icon_button_widget.dart';
+
 import 'package:ngtowncardriver/widgets/app_ride_history_widget.dart';
 import 'package:ngtowncardriver/widgets/header/header.dart';
 
