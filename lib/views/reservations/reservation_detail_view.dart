@@ -64,6 +64,7 @@ class ReservationDetailView extends GetView<ReservationDetailController> {
                   label: AppText.startRide,
                   icon: Icons.play_arrow_rounded,
                   onPressed: controller.startRide,
+                  isEnabled: controller.isStartRideEnabled,
                 );
               }
               if (controller.canContinueRide) {
@@ -73,6 +74,7 @@ class ReservationDetailView extends GetView<ReservationDetailController> {
                   label: AppText.continueRide,
                   icon: Icons.map_outlined,
                   onPressed: controller.continueRide,
+                  isEnabled: true,
                 );
               }
               return const SizedBox.shrink();
@@ -89,6 +91,7 @@ class ReservationDetailView extends GetView<ReservationDetailController> {
     required String label,
     required IconData icon,
     required VoidCallback onPressed,
+    required bool isEnabled,
   }) {
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -99,11 +102,20 @@ class ReservationDetailView extends GetView<ReservationDetailController> {
       ),
       child: Obx(() {
         final busy = controller.isSubmitting.value;
+        final effectiveOnPressed = (busy || !isEnabled) ? null : onPressed;
+
+        final activeBg = AppColors.dashboardAccent;
+        final disabledBg = const Color(0xFF2C2C2E);
+
+        final activeFg = AppColors.black;
+        final disabledFg = AppColors.white.withValues(alpha: 0.38);
+
         return AppButtonWidget(
           text: label,
-          onPressed: busy ? null : onPressed,
-          backgroundColor: AppColors.dashboardAccent,
-          foregroundColor: AppColors.black,
+          onPressed: effectiveOnPressed,
+          backgroundColor: activeBg,
+          disabledBackgroundColor: disabledBg,
+          foregroundColor: isEnabled ? activeFg : disabledFg,
           borderRadius: responsive.w(3),
           showTrailingArrow: false,
           child: Row(
@@ -121,14 +133,14 @@ class ReservationDetailView extends GetView<ReservationDetailController> {
               else
                 Icon(
                   icon,
-                  color: AppColors.black,
+                  color: isEnabled ? activeFg : disabledFg,
                   size: responsive.w(6),
                 ),
               SizedBox(width: responsive.w(2)),
               Text(
                 label,
                 style: AppTextStyles.small(context).copyWith(
-                  color: AppColors.black,
+                  color: isEnabled ? activeFg : disabledFg,
                   fontWeight: FontWeight.w700,
                 ),
               ),

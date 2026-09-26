@@ -24,8 +24,10 @@ class ReservationDetailController extends GetxController {
   final FirestoreService _firestore;
 
   final isSubmitting = false.obs;
+  final isScheduledTimeArrived = false.obs;
 
   StreamSubscription<ReservationModel?>? _reservationSubscription;
+  Timer? _scheduleTimer;
   bool _leftForCompleted = false;
 
   bool get canStartRide {
@@ -33,6 +35,9 @@ class ReservationDetailController extends GetxController {
     return ReservationStatus.isConfirm(current.status) &&
         (current.rideId == null || current.rideId!.isEmpty);
   }
+
+  bool get isStartRideEnabled =>
+      canStartRide && isScheduledTimeArrived.value;
 
   bool get canContinueRide {
     final current = reservation.value;
@@ -46,13 +51,40 @@ class ReservationDetailController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    _updateScheduledTimeState();
+    ever(reservation, (_) => _updateScheduledTimeState());
     _watchReservation();
   }
 
   @override
   void onClose() {
+    _scheduleTimer?.cancel();
     _reservationSubscription?.cancel();
     super.onClose();
+  }
+
+  void _updateScheduledTimeState() {
+    _scheduleTimer?.cancel();
+    _scheduleTimer = null;
+
+    final current = reservation.value;
+    final scheduled = current.scheduledDateTime;
+
+    if (scheduled == null) {
+      isScheduledTimeArrived.value = false;
+      return;
+    }
+
+    final now = DateTime.now();
+    if (!now.isBefore(scheduled)) {
+      isScheduledTimeArrived.value = true;
+    } else {
+      isScheduledTimeArrived.value = false;
+      final duration = scheduled.difference(now);
+      _scheduleTimer = Timer(duration, () {
+        _updateScheduledTimeState();
+      });
+    }
   }
 
   void _watchReservation() {
@@ -103,6 +135,15 @@ class ReservationDetailController extends GetxController {
 
   Future<void> startRide() async {
     if (isSubmitting.value || !canStartRide) return;
+
+    if (!reservation.value.isScheduledTimeArrived) {
+      AppSnackbar.error(
+        title: 'Could not start ride',
+        message:
+            'This reservation cannot be started before the scheduled time.',
+      );
+      return;
+    }
 
     final uid = Get.find<AuthController>().uid;
     if (uid == null) return;

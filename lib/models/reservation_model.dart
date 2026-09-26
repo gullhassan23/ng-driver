@@ -149,6 +149,80 @@ class ReservationModel {
 
   bool get isCancelled => ReservationStatus.isCancelled(status);
 
+  /// Combines [pickupDate] and [pickupTime] into a local [DateTime].
+  /// Returns `null` if [pickupDate] is null or [pickupTime] cannot be parsed.
+  DateTime? get scheduledDateTime {
+    final date = pickupDate;
+    if (date == null) return null;
+
+    final localDate = date.toLocal();
+    final timeRaw = pickupTime.trim();
+    if (timeRaw.isEmpty) return null;
+
+    // Try 12-hour format with AM/PM (e.g., "8:50 PM", "08:50PM", "8:50 am")
+    final match12 = RegExp(
+      r'^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)$',
+      caseSensitive: false,
+    ).firstMatch(timeRaw);
+
+    if (match12 != null) {
+      int hour = int.tryParse(match12.group(1)!) ?? 0;
+      final minute = int.tryParse(match12.group(2)!) ?? 0;
+      final period = match12.group(4)!.toUpperCase();
+
+      if (period == 'PM' && hour < 12) {
+        hour += 12;
+      } else if (period == 'AM' && hour == 12) {
+        hour = 0;
+      }
+
+      return DateTime(
+        localDate.year,
+        localDate.month,
+        localDate.day,
+        hour,
+        minute,
+      );
+    }
+
+    // Try 24-hour format (e.g., "20:50", "08:50", "20:50:00")
+    final match24 = RegExp(r'^(\d{1,2}):(\d{2})(?::(\d{2}))?$').firstMatch(timeRaw);
+    if (match24 != null) {
+      final hour = int.tryParse(match24.group(1)!) ?? 0;
+      final minute = int.tryParse(match24.group(2)!) ?? 0;
+
+      return DateTime(
+        localDate.year,
+        localDate.month,
+        localDate.day,
+        hour,
+        minute,
+      );
+    }
+
+    // Fallback: try parsing pickupTime as DateTime if it's an ISO timestamp
+    final parsedTime = DateTime.tryParse(timeRaw);
+    if (parsedTime != null) {
+      return DateTime(
+        localDate.year,
+        localDate.month,
+        localDate.day,
+        parsedTime.hour,
+        parsedTime.minute,
+      );
+    }
+
+    return null;
+  }
+
+  /// Returns `true` if the scheduled pickup date + time has arrived or passed.
+  /// Returns `false` if [scheduledDateTime] is `null` or still in the future.
+  bool get isScheduledTimeArrived {
+    final scheduled = scheduledDateTime;
+    if (scheduled == null) return false;
+    return !DateTime.now().isBefore(scheduled);
+  }
+
   /// True when both pickup and drop-off coordinates are available for ActiveRide.
   bool get hasPickupAndDropoffCoords =>
       pickupLatitude != null &&

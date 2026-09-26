@@ -4,6 +4,7 @@ import 'package:ngtowncardriver/controllers/auth_controller.dart';
 import 'package:ngtowncardriver/responsiveness/responsive_repo.dart';
 import 'package:ngtowncardriver/utilis/app_colors.dart';
 import 'package:ngtowncardriver/utilis/app_text_styles.dart';
+import 'package:ngtowncardriver/widgets/app_blur_dialog.dart';
 import 'package:ngtowncardriver/widgets/app_icon_button_widget.dart';
 import 'package:ngtowncardriver/widgets/app_snackbar_widget.dart';
 import 'package:ngtowncardriver/widgets/app_text_field_widget.dart';
@@ -39,7 +40,7 @@ class DeleteAccSection extends GetView<AuthController> {
   }
 
   Future<bool?> _showConfirmDialog(BuildContext context) {
-    return showDialog<bool>(
+    return showAppBlurDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -53,10 +54,9 @@ class DeleteAccSection extends GetView<AuthController> {
           ),
           content: Text(
             'This action will permanently delete your driver account and associated data. This cannot be undone.',
-            style: AppTextStyles.whiteSmall(context).copyWith(
-              color: _mutedGrey,
-              height: 1.4,
-            ),
+            style: AppTextStyles.whiteSmall(
+              context,
+            ).copyWith(color: _mutedGrey, height: 1.4),
           ),
           actions: [
             TextButton(
@@ -81,6 +81,7 @@ class DeleteAccSection extends GetView<AuthController> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      
       backgroundColor: AppColors.black,
       body: SafeArea(
         child: Column(
@@ -159,11 +160,12 @@ class DeleteAccSection extends GetView<AuthController> {
           height: 88,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: AppColors.primaryRed.withValues(alpha: 0.14),
+            color: AppColors.primaryGreen,
+            // color: AppColors.primaryRed.withValues(alpha: 0.14),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.warning_amber_rounded,
-            color: AppColors.primaryRed,
+            color: AppColors.black,
             size: 42,
           ),
         ),
@@ -179,11 +181,9 @@ class DeleteAccSection extends GetView<AuthController> {
         Text(
           'Deleting your driver account is permanent. You will lose access to rides, reservations, and profile data.',
           textAlign: TextAlign.center,
-          style: AppTextStyles.whiteSmall(context).copyWith(
-            color: _mutedGrey,
-            height: 1.45,
-            fontSize: 13,
-          ),
+          style: AppTextStyles.whiteSmall(
+            context,
+          ).copyWith(color: _mutedGrey, height: 1.45, fontSize: 13),
         ),
       ],
     );
@@ -202,10 +202,9 @@ class DeleteAccSection extends GetView<AuthController> {
         children: [
           Text(
             'You will lose',
-            style: AppTextStyles.whiteSmall(context).copyWith(
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
-            ),
+            style: AppTextStyles.whiteSmall(
+              context,
+            ).copyWith(fontWeight: FontWeight.w600, fontSize: 15),
           ),
           const SizedBox(height: 8),
           _consequenceRow(
@@ -245,10 +244,16 @@ class DeleteAccSection extends GetView<AuthController> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: AppColors.primaryRed.withValues(alpha: 0.12),
+              color: AppColors.primaryGreen,
+              // color: AppColors.primaryRed.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: AppColors.primaryRed, size: 20),
+            child: Icon(
+              icon,
+              color: AppColors.black,
+              //  color: AppColors.primaryRed,
+              size: 20,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -257,18 +262,16 @@ class DeleteAccSection extends GetView<AuthController> {
               children: [
                 Text(
                   title,
-                  style: AppTextStyles.whiteSmall(context).copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
+                  style: AppTextStyles.whiteSmall(
+                    context,
+                  ).copyWith(fontWeight: FontWeight.w600, fontSize: 14),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: AppTextStyles.whiteSmall(context).copyWith(
-                    color: _mutedGrey,
-                    fontSize: 12,
-                  ),
+                  style: AppTextStyles.whiteSmall(
+                    context,
+                  ).copyWith(color: _mutedGrey, fontSize: 12),
                 ),
               ],
             ),
@@ -291,18 +294,16 @@ class DeleteAccSection extends GetView<AuthController> {
         children: [
           Text(
             'Confirm with password',
-            style: AppTextStyles.whiteSmall(context).copyWith(
-              fontWeight: FontWeight.w600,
-              fontSize: 15,
-            ),
+            style: AppTextStyles.whiteSmall(
+              context,
+            ).copyWith(fontWeight: FontWeight.w600, fontSize: 15),
           ),
           const SizedBox(height: 6),
           Text(
             'Enter your current password to delete this account.',
-            style: AppTextStyles.whiteSmall(context).copyWith(
-              color: _mutedGrey,
-              fontSize: 12,
-            ),
+            style: AppTextStyles.whiteSmall(
+              context,
+            ).copyWith(color: _mutedGrey, fontSize: 12),
           ),
           const SizedBox(height: 12),
           Obx(() {
@@ -372,10 +373,9 @@ class DeleteAccSection extends GetView<AuthController> {
               Expanded(
                 child: Text(
                   'I understand this action cannot be undone.',
-                  style: AppTextStyles.whiteSmall(context).copyWith(
-                    fontSize: 13,
-                    height: 1.35,
-                  ),
+                  style: AppTextStyles.whiteSmall(
+                    context,
+                  ).copyWith(fontSize: 13, height: 1.35),
                 ),
               ),
             ],
@@ -394,7 +394,7 @@ class DeleteAccSection extends GetView<AuthController> {
           width: double.infinity,
           height: 54,
           decoration: BoxDecoration(
-            color: AppColors.primaryRed,
+            color: AppColors.primaryGreen,
             borderRadius: BorderRadius.circular(28),
           ),
           alignment: Alignment.center,
@@ -412,7 +412,7 @@ class DeleteAccSection extends GetView<AuthController> {
                   children: [
                     const Icon(
                       Icons.delete_outline,
-                      color: AppColors.white,
+                      color: AppColors.black,
                       size: 20,
                     ),
                     const SizedBox(width: 8),
@@ -420,6 +420,7 @@ class DeleteAccSection extends GetView<AuthController> {
                       'Delete my account',
                       style: AppTextStyles.whiteSmall(context).copyWith(
                         fontWeight: FontWeight.w600,
+                        color: AppColors.black,
                         fontSize: 15,
                       ),
                     ),

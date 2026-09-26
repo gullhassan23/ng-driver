@@ -6,6 +6,7 @@ import 'package:ngtowncardriver/controllers/dashboard_controller.dart';
 import 'package:ngtowncardriver/routes/app_routes.dart';
 import 'package:ngtowncardriver/utilis/app_colors.dart';
 import 'package:ngtowncardriver/utilis/app_text_styles.dart';
+import 'package:ngtowncardriver/widgets/app_blur_dialog.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -27,7 +28,7 @@ class SettingsView extends StatelessWidget {
   }
 
   void _showLogoutDialog(BuildContext context) {
-    showDialog(
+    showAppBlurDialog(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(

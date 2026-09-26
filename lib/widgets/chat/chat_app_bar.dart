@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 
 import '../../responsiveness/responsive_repo.dart';
 import '../../utilis/app_colors.dart';
 import '../app_icon_button_widget.dart';
 
 class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
-  const ChatAppBar({
-    super.key,
-    required this.riderName,
-    this.onBack,
-  });
+  const ChatAppBar({super.key, required this.riderName, this.onBack});
 
   final String riderName;
   final VoidCallback? onBack;
@@ -30,11 +27,13 @@ class ChatAppBar extends StatelessWidget implements PreferredSizeWidget {
       scrolledUnderElevation: 0,
       leading: AppIconButtonWidget(
         icon: Icons.arrow_back,
-        onPressed: onBack ?? () => Navigator.of(context).maybePop(),
+        onPressed: () => Get.back(),
         backgroundColor: AppColors.primaryGreen,
         iconColor: AppColors.black,
         width: responsive.w(10),
         height: responsive.h(5),
+        top: responsive.h(2),
+        left: responsive.w(4),
         borderRadius: responsive.w(3),
       ),
       title: Column(

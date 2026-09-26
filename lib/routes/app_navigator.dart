@@ -25,7 +25,7 @@ class AppNavigator {
   }
 
   static void toReservationHistory() {
-    Get.offNamed(AppRoutes.reservationhistory);
+    Get.toNamed(AppRoutes.reservationhistory);
   }
 
   static void toSigUp() {
@@ -64,7 +64,7 @@ class AppNavigator {
   }
 
   static void torideHistory() {
-    Get.offNamed(AppRoutes.rideHistory);
+    Get.toNamed(AppRoutes.rideHistory);
   }
 
   static void toCompletedRideDetail({
@@ -78,11 +78,11 @@ class AppNavigator {
   }
 
   static void toreviewsRatings() {
-    Get.offNamed(AppRoutes.reviewsRatings);
+    Get.toNamed(AppRoutes.reviewsRatings);
   }
 
   static void toprofile() {
-    Get.offNamed(AppRoutes.profile);
+    Get.toNamed(AppRoutes.profile);
   }
 
   static void todriverDetails() {

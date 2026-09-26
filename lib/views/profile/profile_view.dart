@@ -8,6 +8,7 @@ import 'package:ngtowncardriver/services/firestore_service.dart';
 import 'package:ngtowncardriver/utilis/app_colors.dart';
 import 'package:ngtowncardriver/utilis/app_text_styles.dart';
 import 'package:ngtowncardriver/utilis/firestore_paths.dart';
+import 'package:ngtowncardriver/widgets/app_blur_dialog.dart';
 import 'package:ngtowncardriver/widgets/app_icon_button_widget.dart';
 import 'package:ngtowncardriver/widgets/app_snackbar_widget.dart';
 import 'package:ngtowncardriver/widgets/constants/menu_item.dart';
@@ -460,7 +461,7 @@ class _ProfileViewState extends State<ProfileView> {
   }
 
   void _showLogoutDialog(BuildContext context) {
-    showDialog(
+    showAppBlurDialog(
       context: context,
       builder: (context) {
         return AlertDialog(

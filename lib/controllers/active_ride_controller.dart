@@ -24,6 +24,7 @@ import '../utilis/app_colors.dart';
 import '../utilis/chat_constants.dart';
 import '../utilis/firestore_paths.dart';
 import '../utilis/map_route_polyline.dart';
+import '../widgets/app_blur_dialog.dart';
 import '../widgets/app_snackbar_widget.dart';
 import 'auth_controller.dart';
 import 'dashboard_controller.dart';
@@ -1883,7 +1884,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
       return;
     }
 
-    final confirmed = await Get.dialog<bool>(
+    final confirmed = await showAppBlurGetDialog<bool>(
       AlertDialog(
         backgroundColor: AppColors.inputBackground,
         title: const Text(

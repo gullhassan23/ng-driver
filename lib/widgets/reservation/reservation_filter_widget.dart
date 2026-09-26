@@ -49,7 +49,10 @@ class AppReservationFilterWidget extends StatelessWidget {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               margin: EdgeInsets.only(right: responsive.w(2)),
-              padding: EdgeInsets.symmetric(horizontal: responsive.w(4)),
+              padding: EdgeInsets.symmetric(
+                horizontal: responsive.w(4),
+                vertical: responsive.h(2),
+              ),
               decoration: BoxDecoration(
                 color: isSelected
                     ? AppColors.primaryGreen

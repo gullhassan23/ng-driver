@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:ngtowncardriver/responsiveness/responsive_repo.dart';
+import 'package:ngtowncardriver/routes/app_navigator.dart';
 import 'package:ngtowncardriver/utilis/app_colors.dart';
 import 'package:ngtowncardriver/utilis/app_text_styles.dart';
 import 'package:ngtowncardriver/widgets/app_icon_button_widget.dart';
@@ -10,6 +11,7 @@ class AppHeader extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool canPop;
+  final VoidCallback? onBackPressed;
 
   // Optional bottom description
   final bool showDescription;
@@ -21,6 +23,7 @@ class AppHeader extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.canPop,
+    this.onBackPressed,
     this.showDescription = false,
     this.description,
   });
@@ -39,7 +42,14 @@ class AppHeader extends StatelessWidget {
           if (canPop)
             AppIconButtonWidget(
               icon: Icons.arrow_back,
-              onPressed: () => Get.back(),
+              onPressed: onBackPressed ??
+                  () {
+                    if (Navigator.canPop(context)) {
+                      Get.back();
+                    } else {
+                      AppNavigator.todashboard();
+                    }
+                  },
               backgroundColor: AppColors.primaryGreen,
               iconColor: AppColors.black,
               width: responsive.w(10),

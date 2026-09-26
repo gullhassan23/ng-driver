@@ -8,6 +8,7 @@ import '../../routes/app_routes.dart';
 import '../../utilis/app_colors.dart';
 import '../../utilis/app_text.dart';
 import '../../utilis/app_text_styles.dart';
+import '../../widgets/app_blur_dialog.dart';
 import '../../widgets/buttons/app_button_widget.dart';
 import '../../widgets/app_image_widget.dart';
 
@@ -129,7 +130,7 @@ class ForgotView extends GetView<AuthController> {
   void _showResetSuccessDialog(BuildContext context) {
     final responsive = ResponsiveRepo(context);
 
-    showDialog(
+    showAppBlurDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {

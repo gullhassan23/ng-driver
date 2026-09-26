@@ -604,6 +604,14 @@ class FirestoreService {
         throw StateError('Reservation is no longer available.');
       }
 
+      final existingRideId = reservation.rideId;
+      final isNewRide = existingRideId == null || existingRideId.isEmpty;
+      if (isNewRide && !reservation.isScheduledTimeArrived) {
+        throw StateError(
+          'This reservation cannot be started before the scheduled time.',
+        );
+      }
+
       final assignedDriverId = reservation.driverId;
       if (assignedDriverId != null &&
           assignedDriverId.isNotEmpty &&
@@ -616,7 +624,6 @@ class FirestoreService {
       final txnActiveRideId =
           txnDriverData[DriverFields.currentRideId] as String?;
 
-      final existingRideId = reservation.rideId;
       if (existingRideId != null && existingRideId.isNotEmpty) {
         if (!ReservationStatus.isConfirm(reservation.status) &&
             !ReservationStatus.isLiveActive(reservation.status)) {
