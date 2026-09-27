@@ -3,7 +3,7 @@ import 'package:get/get.dart';
 import '../models/ride_model.dart';
 import '../routes/app_routes.dart';
 import '../utilis/firestore_paths.dart';
-import '../views/rides/ride_history_detail.dart';
+
 import 'ride_history_feed_controller.dart';
 
 class RidesHistoryController extends GetxController {
@@ -21,16 +21,14 @@ class RidesHistoryController extends GetxController {
     if (filter == 1) {
       return source
           .where(
-            (ride) =>
-                RideStatus.normalize(ride.status) == RideStatus.completed,
+            (ride) => RideStatus.normalize(ride.status) == RideStatus.completed,
           )
           .toList();
     }
     if (filter == 2) {
       return source
           .where(
-            (ride) =>
-                RideStatus.normalize(ride.status) == RideStatus.cancelled,
+            (ride) => RideStatus.normalize(ride.status) == RideStatus.cancelled,
           )
           .toList();
     }
@@ -61,10 +59,11 @@ class RidesHistoryController extends GetxController {
     feed.ensureListening();
     _syncFromFeed(feed);
     _feedWorker?.dispose();
-    _feedWorker = everAll(
-      [feed.history, feed.isLoading, feed.errorMessage],
-      (_) => _syncFromFeed(feed),
-    );
+    _feedWorker = everAll([
+      feed.history,
+      feed.isLoading,
+      feed.errorMessage,
+    ], (_) => _syncFromFeed(feed));
   }
 
   void _syncFromFeed(RideHistoryFeedController feed) {
@@ -78,11 +77,12 @@ class RidesHistoryController extends GetxController {
   }
 
   void openDetail(RideModel ride) {
-    if (RideStatus.normalize(ride.status) == RideStatus.completed) {
-      Get.toNamed(AppRoutes.completedRideDetail, arguments: ride);
-      return;
-    }
-    Get.to(() => RideHistoryDetailView(ride: ride));
+    // if (RideStatus.normalize(ride.status) == RideStatus.completed) {
+    //   Get.toNamed(AppRoutes.completedRideDetail, arguments: ride);
+    //   return;
+    // }
+    // Get.to(() => RideHistoryDetailView(ride: ride));
+    Get.toNamed(AppRoutes.rideDetail, arguments: ride);
   }
 
   void retry() {

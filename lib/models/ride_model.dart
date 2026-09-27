@@ -39,8 +39,12 @@ class RideModel {
   final DateTime? arrivingAt;
   final DateTime? startedAt;
   final DateTime? completedAt;
+  final DateTime? cancelledAt;
   final DateTime? updatedAt;
   final int durationMinutes;
+
+  /// Cancellation reason text (from `cancellationReason` Firestore field).
+  final String cancelReason;
   final bool riderArrived;
   final DateTime? riderArrivedAt;
 
@@ -83,8 +87,10 @@ class RideModel {
     this.arrivingAt,
     this.startedAt,
     this.completedAt,
+    this.cancelledAt,
     this.updatedAt,
     this.durationMinutes = 0,
+    this.cancelReason = '',
     this.riderArrived = false,
     this.riderArrivedAt,
     this.riderRating,
@@ -248,8 +254,10 @@ class RideModel {
       arrivingAt: timestamp(RideFields.arrivingAt),
       startedAt: timestamp(RideFields.startedAt),
       completedAt: timestamp(RideFields.completedAt),
+      cancelledAt: timestamp(RideFields.cancelledAt),
       updatedAt: timestamp(RideFields.updatedAt),
       durationMinutes: minutes(RideFields.durationMinutes),
+      cancelReason: text(RideFields.cancellationReason),
       riderArrived: map[RideFields.riderArrived] == true,
       riderArrivedAt: timestamp(RideFields.riderArrivedAt),
       riderRating: tripRating(),
@@ -290,8 +298,10 @@ class RideModel {
       arrivingAt: arrivingAt,
       startedAt: startedAt,
       completedAt: completedAt,
+      cancelledAt: cancelledAt,
       updatedAt: updatedAt,
       durationMinutes: durationMinutes,
+      cancelReason: cancelReason,
       riderArrived: riderArrived,
       riderArrivedAt: riderArrivedAt,
       riderRating: riderRating,

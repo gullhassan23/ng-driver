@@ -91,7 +91,7 @@ class ReviewsRatingsController extends GetxController {
   }
 
   void openDetail(RideModel ride) {
-    Get.toNamed(AppRoutes.completedRideDetail, arguments: ride);
+    Get.toNamed(AppRoutes.rideDetail, arguments: ride);
   }
 
   void retry() {

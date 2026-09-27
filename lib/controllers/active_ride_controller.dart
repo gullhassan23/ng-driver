@@ -22,6 +22,7 @@ import '../services/marker_icon_cache.dart';
 import '../services/ride_status_evaluator.dart';
 import '../utilis/app_colors.dart';
 import '../utilis/chat_constants.dart';
+import '../utilis/driver_car_marker.dart';
 import '../utilis/firestore_paths.dart';
 import '../utilis/map_route_polyline.dart';
 import '../widgets/app_blur_dialog.dart';
@@ -141,7 +142,13 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
   BitmapDescriptor? _stopIcon;
   LatLng? _lastCameraFollowPos;
   DateTime? _lastCameraFollowAt;
-  LatLng? _lastDriverMarkerPos;
+
+  LatLng? _previousPosForBearing;
+  double? _lastValidMovementBearing;
+  LatLng? _animatedDriverMarkerPos;
+  double? _animatedDriverMarkerRotation;
+  Timer? _markerAnimationTimer;
+  static const double _minBearingMovementMeters = 2.5;
 
   /// Frozen once for GoogleMap init — never read reactive fields for this.
   LatLng? _frozenInitialCameraTarget;
@@ -261,6 +268,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
     _routeDebounce?.cancel();
     _locationWriteRetry?.cancel();
     _proximityPollTimer?.cancel();
+    _markerAnimationTimer?.cancel();
     _rideSubscription?.cancel();
     _reservationSubscription?.cancel();
     _positionSubscription?.cancel();
@@ -677,7 +685,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
       _location.cachePosition(current);
       _freezeInitialCameraTarget(current);
       if (!isWaitingAtPickup) {
-        _syncDriverMarker();
+        _updateDriverLocationFix(current);
       }
       unawaited(_handleLocationUpdate(current));
       unawaited(_maybePersistDriverLocation(current));
@@ -709,7 +717,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
             // churn blanks GoogleMap and mis-composites the bottom sheet.
             if (isWaitingAtPickup) return;
 
-            _syncDriverMarker();
+            _updateDriverLocationFix(latLng, gpsHeading: position.heading);
             if (isFollowingDriver.value &&
                 !_routeFetchInFlight &&
                 !_programmaticCameraMove) {
@@ -803,7 +811,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
       if (previous == null ||
           previous.latitude != fresh.latitude ||
           previous.longitude != fresh.longitude) {
-        _syncDriverMarker();
+        _updateDriverLocationFix(fresh);
       }
     }
     await _handleLocationUpdate(position);
@@ -1336,7 +1344,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
       if (driverOrigin != null) {
         driverPosition.value = driverOrigin;
         _location.cachePosition(driverOrigin);
-        _syncDriverMarker();
+        _updateDriverLocationFix(driverOrigin);
       }
       origin = driverOrigin;
 
@@ -1604,8 +1612,12 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
 
     final driver = driverPosition.value;
     if (driver != null) {
-      next.add(_driverMarker(driver));
-      _lastDriverMarkerPos = driver;
+      final pos = _animatedDriverMarkerPos ?? driver;
+      final rot = _animatedDriverMarkerRotation ??
+          (_lastValidMovementBearing != null
+              ? calculateCarMarkerRotation(_lastValidMovementBearing!)
+              : kDriverCarAssetOrientationOffset);
+      next.add(_driverMarker(pos, rot));
     }
 
     markers.assignAll(next);
@@ -1615,27 +1627,121 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
     if (isWaitingAtPickup) return;
     final driver = driverPosition.value;
     if (driver == null) return;
+    _updateDriverLocationFix(driver, gpsHeading: _lastHeading);
+  }
 
-    final last = _lastDriverMarkerPos;
-    if (last != null &&
-        last.latitude == driver.latitude &&
-        last.longitude == driver.longitude) {
+  void _updateDriverLocationFix(LatLng newPos, {double? gpsHeading}) {
+    if (_exiting || isClosed) return;
+
+    final prev = _previousPosForBearing;
+    if (prev == null) {
+      if (gpsHeading != null && gpsHeading > 0 && !gpsHeading.isNaN) {
+        _lastValidMovementBearing = normalizeAngle(gpsHeading);
+      }
+      _previousPosForBearing = newPos;
+    } else {
+      final distance = Geolocator.distanceBetween(
+        prev.latitude,
+        prev.longitude,
+        newPos.latitude,
+        newPos.longitude,
+      );
+      if (distance >= _minBearingMovementMeters) {
+        final bearing = Geolocator.bearingBetween(
+          prev.latitude,
+          prev.longitude,
+          newPos.latitude,
+          newPos.longitude,
+        );
+        _lastValidMovementBearing = normalizeAngle(bearing);
+        _previousPosForBearing = newPos;
+      }
+    }
+
+    final double targetRotation;
+    if (_lastValidMovementBearing != null) {
+      targetRotation = calculateCarMarkerRotation(_lastValidMovementBearing!);
+    } else if (gpsHeading != null && gpsHeading > 0 && !gpsHeading.isNaN) {
+      targetRotation = calculateCarMarkerRotation(gpsHeading);
+    } else if (_animatedDriverMarkerRotation != null) {
+      targetRotation = _animatedDriverMarkerRotation!;
+    } else {
+      targetRotation = kDriverCarAssetOrientationOffset;
+    }
+
+    _animateDriverMarkerTo(newPos, targetRotation);
+  }
+
+  void _animateDriverMarkerTo(LatLng targetPos, double targetRotation) {
+    if (isWaitingAtPickup) return;
+
+    final startPos = _animatedDriverMarkerPos ?? targetPos;
+    final startRotation = _animatedDriverMarkerRotation ?? targetRotation;
+
+    final distanceMeters = Geolocator.distanceBetween(
+      startPos.latitude,
+      startPos.longitude,
+      targetPos.latitude,
+      targetPos.longitude,
+    );
+
+    final angleDiff = calculateShortestAngleDiff(startRotation, targetRotation);
+
+    if (distanceMeters < 0.1 && angleDiff.abs() < 0.5) {
+      _animatedDriverMarkerPos = targetPos;
+      _animatedDriverMarkerRotation = targetRotation;
+      _renderDriverMarker(targetPos, targetRotation);
       return;
     }
-    _lastDriverMarkerPos = driver;
+
+    _markerAnimationTimer?.cancel();
+
+    const int totalSteps = 10;
+    const Duration stepDuration = Duration(milliseconds: 30);
+    int step = 0;
+
+    _markerAnimationTimer = Timer.periodic(stepDuration, (timer) {
+      if (_exiting || isClosed) {
+        timer.cancel();
+        return;
+      }
+
+      step++;
+      final double progress = (step / totalSteps).clamp(0.0, 1.0);
+      final double ease = progress * (2.0 - progress);
+
+      final double lat =
+          startPos.latitude + (targetPos.latitude - startPos.latitude) * ease;
+      final double lng =
+          startPos.longitude + (targetPos.longitude - startPos.longitude) * ease;
+      final double rot = normalizeAngle(startRotation + angleDiff * ease);
+
+      final currentPos = LatLng(lat, lng);
+      _animatedDriverMarkerPos = currentPos;
+      _animatedDriverMarkerRotation = rot;
+
+      _renderDriverMarker(currentPos, rot);
+
+      if (step >= totalSteps) {
+        timer.cancel();
+        _animatedDriverMarkerPos = targetPos;
+        _animatedDriverMarkerRotation = targetRotation;
+        _renderDriverMarker(targetPos, targetRotation);
+      }
+    });
+  }
+
+  void _renderDriverMarker(LatLng position, double rotation) {
+    if (isWaitingAtPickup) return;
 
     final next = markers
         .where((marker) => marker.markerId != _driverMarkerId)
         .toSet();
-    next.add(_driverMarker(driver));
+    next.add(_driverMarker(position, rotation));
     markers.assignAll(next);
   }
 
-  Marker _driverMarker(LatLng position) {
-    final heading = _lastHeading;
-    final rotation = heading != null && heading >= 0 && !heading.isNaN
-        ? heading
-        : 0.0;
+  Marker _driverMarker(LatLng position, double rotation) {
     return Marker(
       markerId: _driverMarkerId,
       position: position,

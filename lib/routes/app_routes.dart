@@ -16,7 +16,7 @@ class AppRoutes {
   static const String chat = '/chat';
   static const String deleteacc = '/deleteAccount';
   static const String rideHistory = '/rideHistory';
-  static const String completedRideDetail = '/completedRideDetail';
+  static const String rideDetail = '/rideDetail';
   static const String reviewsRatings = '/reviewsRatings';
   static const String profile = '/profile';
   static const String driverDetails = '/driverDetails';

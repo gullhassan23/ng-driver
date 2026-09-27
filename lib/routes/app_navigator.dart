@@ -72,7 +72,7 @@ class AppNavigator {
     bool returnToDashboard = false,
   }) {
     Get.offAllNamed(
-      AppRoutes.completedRideDetail,
+      AppRoutes.rideDetail,
       arguments: {'ride': ride, 'returnToDashboard': returnToDashboard},
     );
   }

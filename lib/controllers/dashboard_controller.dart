@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart'; // keep for VoidCallback & BuildContext used below
 import 'package:get/get.dart';
 
 import '../models/driver_model.dart';
@@ -14,6 +14,7 @@ import '../services/firestore_service.dart';
 import '../services/location_service.dart';
 import '../services/map_warmup_service.dart';
 import '../services/notification_service.dart';
+import '../services/ride_alert_service.dart';
 import '../utilis/firestore_paths.dart';
 import '../widgets/app_snackbar_widget.dart';
 import 'auth_controller.dart';
@@ -43,6 +44,12 @@ class DashboardController extends GetxController {
   final NotificationService _notifications;
   final LocationService _location;
   final MapWarmupService _mapWarmup;
+
+  /// Plays ringtone + vibration when a new ride appears in the pending feed.
+  final RideAlertService _rideAlert = RideAlertService();
+
+  /// Tracks ride IDs already seen so we only alert on genuinely new arrivals.
+  final Set<String> _knownRideIds = <String>{};
 
   final rideRequests = <RideRequestModel>[].obs;
   final rides = <RideModel>[].obs;
@@ -97,8 +104,27 @@ class DashboardController extends GetxController {
   /// Dedicated lock so Pending-open does not block post-accept navigation.
   bool _isOpeningActiveRide = false;
 
-  /// Local-only dismissals so the pending stream does not re-add swiped cards.
-  final Set<String> _dismissedRideIds = <String>{};
+  // ── Driver-decline cooldown ─────────────────────────────────────────────
+  //
+  // When a driver taps "Decline" the ride is hidden locally for [driverDeclineCooldown].
+  // The ride status in Firestore stays `pending` — it is NEVER cancelled.
+  // After cooldown expires the ride reappears naturally via the existing
+  // reactive Firestore listener (no manual refresh required).
+  //
+  // Separate from rider cancellation / ride expiry — those change Firestore status.
+  // This is purely a driver-local, in-memory, timed suppression.
+
+  /// How long a declined ride is hidden from this driver before it may reappear.
+  ///
+  /// Matches the ride-expiry window (5 min) so a declined ride can come back
+  /// exactly once before it expires. Adjust freely — change only this constant.
+  static const Duration driverDeclineCooldown = Duration(seconds: 10);
+
+  /// rideId → earliest DateTime at which this driver may see the ride again.
+  final Map<String, DateTime> _declinedRideExpiry = {};
+
+  /// Per-ride timers that trigger a listener restart when cooldown expires.
+  final Map<String, Timer> _declinedRideTimers = {};
 
   /// After a failed go-online (or restore), retry when the app resumes.
   bool _pendingGoOnline = false;
@@ -343,7 +369,9 @@ class DashboardController extends GetxController {
     _tokenSubscription?.cancel();
     _driverSubscription?.cancel();
     _historyFeedWorker?.dispose();
+    _cancelAllDeclineTimers();
     unawaited(_notifications.cancelListen());
+    unawaited(_rideAlert.dispose());
     super.onClose();
   }
 
@@ -408,6 +436,11 @@ class DashboardController extends GetxController {
     _requestsSubscription = null;
     _ridesSubscription?.cancel();
     _ridesSubscription = null;
+    // Clear known IDs so next online session detects fresh rides as new.
+    _knownRideIds.clear();
+    // Cancel pending cooldown timers — no rides to reappear while offline.
+    _cancelAllDeclineTimers();
+    unawaited(_rideAlert.stop());
   }
 
   // ==========================================
@@ -434,17 +467,64 @@ class DashboardController extends GetxController {
 
     _ridesSubscription = _firestore.pendingRides().listen(
       (pending) {
-        rides.assignAll(
-          pending.where((ride) => !_dismissedRideIds.contains(ride.id)),
-        );
+        // Exclude rides the driver declined that are still in their cooldown window.
+        // Rides whose cooldown has expired are automatically re-included here;
+        // the filter helper cleans up the expiry map as it goes.
+        final filtered = pending
+            .where((ride) => !_isDeclinedAndCoolingDown(ride.id))
+            .toList();
+
+        // Detect any ride IDs that weren't in our known set yet.
+        // A ride that reappears after cooldown is already in _knownRideIds,
+        // so no duplicate alert plays — correct behaviour.
+        bool hasNewRide = false;
+        for (final ride in filtered) {
+          if (!_knownRideIds.contains(ride.id)) {
+            hasNewRide = true;
+            _knownRideIds.add(ride.id);
+          }
+        }
+
+        rides.assignAll(filtered);
         errorMessage.value = null;
         isLoading.value = false;
+
+        // Play alert only when a truly new ride arrives.
+        if (hasNewRide && filtered.isNotEmpty) {
+          unawaited(_rideAlert.playNewRideAlert());
+        }
       },
       onError: (Object error) {
         errorMessage.value = 'Could not load pending rides. Pull to retry.';
         isLoading.value = false;
       },
     );
+  }
+
+  // ── Decline-cooldown helpers ─────────────────────────────────────────────
+
+  /// Returns `true` when [rideId] was declined and the cooldown has not yet
+  /// expired for this driver.  Automatically removes stale entries so the
+  /// next Firestore emission includes the ride again without any manual refresh.
+  bool _isDeclinedAndCoolingDown(String rideId) {
+    final expiry = _declinedRideExpiry[rideId];
+    if (expiry == null) return false;
+    if (DateTime.now().isAfter(expiry)) {
+      // Cooldown expired — clean up so the ride is eligible again.
+      _declinedRideExpiry.remove(rideId);
+      _declinedRideTimers.remove(rideId)?.cancel();
+      return false;
+    }
+    return true; // Still in cooldown window.
+  }
+
+  /// Cancels all pending decline timers (used on offline toggle and onClose).
+  void _cancelAllDeclineTimers() {
+    for (final timer in _declinedRideTimers.values) {
+      timer.cancel();
+    }
+    _declinedRideTimers.clear();
+    _declinedRideExpiry.clear();
   }
 
   void _bindRideHistoryFeed() {
@@ -775,6 +855,9 @@ class DashboardController extends GetxController {
     isAccepting.value = true;
     acceptingRideId.value = ride.id;
 
+    // Stop the incoming-ride alert as soon as the driver taps Accept.
+    unawaited(_rideAlert.stop());
+
     try {
       // Prefer a fresh fix when available; still claim if GPS is slow.
       final position = await _location.getPositionQuick();
@@ -791,7 +874,10 @@ class DashboardController extends GetxController {
       if (isClosed) return false;
 
       rides.removeWhere((item) => item.id == ride.id);
-      _dismissedRideIds.remove(ride.id);
+      // Clear any lingering decline-cooldown state for this ride so it can
+      // never reappear — another driver already owns it after this accept.
+      _declinedRideExpiry.remove(ride.id);
+      _declinedRideTimers.remove(ride.id)?.cancel();
       currentRideId.value = ride.id;
 
       final latest = await _firestore.fetchRide(ride.id) ?? ride;
@@ -835,12 +921,49 @@ class DashboardController extends GetxController {
     }
   }
 
-  /// Hides a pending ride for this driver only (does not cancel in Firestore).
+  /// Temporarily hides a pending ride for this driver only.
+  ///
+  /// **Does NOT cancel the ride in Firestore.**  The ride status remains
+  /// `pending` so the rider continues to see it as active and other eligible
+  /// drivers continue to receive it.
+  ///
+  /// After [driverDeclineCooldown] the ride becomes eligible again for this
+  /// driver (naturally, via the reactive Firestore listener — no manual
+  /// refresh required) provided it is still pending and no other driver has
+  /// accepted it.
   Future<bool> dismissRide(RideModel ride) async {
     if (isAccepting.value) return false;
 
-    _dismissedRideIds.add(ride.id);
+    // Record when this driver may see the ride again.
+    final expiry = DateTime.now().add(driverDeclineCooldown);
+    _declinedRideExpiry[ride.id] = expiry;
+
+    // Cancel any existing timer for this ride (e.g. driver declined the same
+    // ride a second time after it reappeared).
+    _declinedRideTimers[ride.id]?.cancel();
+
+    // Schedule re-evaluation at cooldown expiry.  The listener restart
+    // re-queries Firestore and re-applies the filter, so the ride reappears
+    // automatically if it is still pending and unclaimed.
+    _declinedRideTimers[ride.id] = Timer(driverDeclineCooldown, () {
+      if (isClosed) return;
+      _declinedRideExpiry.remove(ride.id);
+      _declinedRideTimers.remove(ride.id);
+      // Remove from known IDs so the ride is treated as a fresh arrival
+      // when the listener restarts — this triggers the alert tone + vibration.
+      _knownRideIds.remove(ride.id);
+      // Only restart if the driver is still ride-online.
+      if (onlineMode.value == DriverOnlineMode.ride) {
+        _listenForPendingRides();
+      }
+    });
+
+    // Remove immediately from the visible list.
     rides.removeWhere((item) => item.id == ride.id);
+
+    // Stop alert when driver declines — no more rides to alert for if list empty.
+    if (rides.isEmpty) unawaited(_rideAlert.stop());
+
     AppSnackbar.info(
       title: 'Ride declined',
       message: 'This ride was hidden from your list.',

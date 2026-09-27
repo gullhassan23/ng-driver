@@ -54,6 +54,8 @@ dependencies:
   lottie: ^3.3.1
   shimmer: ^3.0.0
   package_info_plus: ^10.2.1
+  vibration: ^3.1.2
+  audioplayers: ^6.1.0
 
 dev_dependencies:
   flutter_test:
@@ -91,6 +93,7 @@ flutter:
      - assets/
      - assets/images/
      - assets/lottie/
+     - assets/tune/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

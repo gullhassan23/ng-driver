@@ -234,14 +234,14 @@ class AppPages {
       }),
     ),
     GetPage(
-      name: AppRoutes.completedRideDetail,
-      page: () => const RideCompletedView(),
+      name: AppRoutes.rideDetail,
+      page: () => const RideDetail(),
       transition: _transition,
       transitionDuration: _transitionDuration,
       curve: Curves.easeInOut,
       middlewares: [ApprovalMiddleware()],
       binding: BindingsBuilder(() {
-        Get.lazyPut<RideCompletedController>(() => RideCompletedController());
+        Get.lazyPut<RideDetailController>(() => RideDetailController());
       }),
     ),
     GetPage(

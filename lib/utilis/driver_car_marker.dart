@@ -9,6 +9,35 @@ const String kPickupMarkerAsset = 'assets/images/location.webp';
 const String kDropoffMarkerAsset = 'assets/images/flag.webp';
 const String kStopMarkerAsset = 'assets/images/stop.png';
 
+/// Fixed orientation offset (in degrees) to convert movement bearing (0° = North)
+/// to the visual rotation of [kDriverCarMarkerAsset].
+///
+/// In `assets/images/driver_car.webp`, the car's front (headlights/windshield)
+/// naturally points South-West (~225°). Adding 135° aligns the front to face North (0°).
+const double kDriverCarAssetOrientationOffset = 135.0;
+
+/// Normalizes an angle in degrees to the range [0.0, 360.0).
+double normalizeAngle(double angle) {
+  double result = angle % 360.0;
+  if (result < 0) {
+    result += 360.0;
+  }
+  return result;
+}
+
+/// Calculates the shortest angular difference in degrees from [from] to [to].
+/// Result is in the range [-180.0, 180.0].
+double calculateShortestAngleDiff(double from, double to) {
+  return ((to - from + 540.0) % 360.0) - 180.0;
+}
+
+/// Converts a movement bearing (0° = North, 90° = East, etc.) into the marker rotation
+/// angle for Google Maps, taking into account [kDriverCarAssetOrientationOffset].
+double calculateCarMarkerRotation(double movementBearing) {
+  return normalizeAngle(movementBearing + kDriverCarAssetOrientationOffset);
+}
+
+
 /// Decodes an asset into a map marker icon with transparent background.
 ///
 /// Source webps ship with an opaque black backdrop; near-black pixels connected
