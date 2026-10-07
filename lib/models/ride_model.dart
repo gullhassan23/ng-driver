@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../utilis/firestore_paths.dart';
@@ -41,6 +41,7 @@ class RideModel {
   final DateTime? completedAt;
   final DateTime? cancelledAt;
   final DateTime? updatedAt;
+  final DateTime? expiresAt;
   final int durationMinutes;
 
   /// Cancellation reason text (from `cancellationReason` Firestore field).
@@ -89,6 +90,7 @@ class RideModel {
     this.completedAt,
     this.cancelledAt,
     this.updatedAt,
+    this.expiresAt,
     this.durationMinutes = 0,
     this.cancelReason = '',
     this.riderArrived = false,
@@ -256,6 +258,7 @@ class RideModel {
       completedAt: timestamp(RideFields.completedAt),
       cancelledAt: timestamp(RideFields.cancelledAt),
       updatedAt: timestamp(RideFields.updatedAt),
+      expiresAt: timestamp(RideFields.expiresAt),
       durationMinutes: minutes(RideFields.durationMinutes),
       cancelReason: text(RideFields.cancellationReason),
       riderArrived: map[RideFields.riderArrived] == true,
@@ -300,6 +303,7 @@ class RideModel {
       completedAt: completedAt,
       cancelledAt: cancelledAt,
       updatedAt: updatedAt,
+      expiresAt: expiresAt,
       durationMinutes: durationMinutes,
       cancelReason: cancelReason,
       riderArrived: riderArrived,
@@ -318,6 +322,17 @@ class RideModel {
   /// Ride was created from a confirmed reservation.
   bool get isFromReservation =>
       reservationId != null && reservationId!.isNotEmpty;
+
+  /// True when the ride offer window has already closed on the client clock.
+  ///
+  /// The server-side expiry (Cloud Function + Firestore Rules) is authoritative;
+  /// this is a fast client-side pre-filter that covers the <=1-min scheduler lag.
+  /// A null [expiresAt] means no expiry set (legacy rides) -- treat as non-expired.
+  bool get isOfferExpired {
+    final exp = expiresAt;
+    if (exp == null) return false;
+    return !exp.isAfter(DateTime.now());
+  }
 
   /// Passenger (rider app) cancelled this ride.
   bool get wasCancelledByRider {

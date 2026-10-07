@@ -142,52 +142,53 @@ class NewReservationRequestView
 
         return Row(
           children: [
-            Expanded(
-              child: AppButtonWidget(
-                text: 'Decline',
-                onPressed: busy ? null : controller.decline,
-                backgroundColor: AppColors.black,
-                disabledBackgroundColor: Colors.grey.shade800,
-                foregroundColor: AppColors.white,
-                borderColor: declineColor,
-                borderWidth: 1.2,
-                borderRadius: responsive.w(3),
-                showTrailingArrow: false,
-                child: declining
-                    ? _buildButtonLoader(
-                        context,
-                        responsive,
-                        label: 'Declining…',
-                        color: declineColor,
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.close,
-                            color: declineColor,
-                            size: responsive.w(5),
-                          ),
-                          SizedBox(width: responsive.w(2)),
-                          Text(
-                            'Decline',
-                            style: AppTextStyles.small(context).copyWith(
-                              color: AppColors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
+            // Expanded(
+            //   child: AppButtonWidget(
+            //     text: 'Decline',
+            //     onPressed: busy ? null : controller.decline,
+            //     backgroundColor: AppColors.black,
+            //     disabledBackgroundColor: Colors.grey.shade800,
+            //     foregroundColor: AppColors.white,
+            //     borderColor: declineColor,
+            //     borderWidth: 1.2,
+            //     borderRadius: responsive.w(3),
+            //     showTrailingArrow: false,
+            //     child: declining
+            //         ? _buildButtonLoader(
+            //             context,
+            //             responsive,
+            //             label: 'Declining…',
+            //             color: declineColor,
+            //           )
+            //         : Row(
+            //             mainAxisAlignment: MainAxisAlignment.center,
+            //             children: [
+            //               Icon(
+            //                 Icons.close,
+            //                 color: declineColor,
+            //                 size: responsive.w(5),
+            //               ),
+            //               SizedBox(width: responsive.w(2)),
+            //               Text(
+            //                 'Decline',
+            //                 style: AppTextStyles.small(context).copyWith(
+            //                   color: AppColors.white,
+            //                   fontWeight: FontWeight.w600,
+            //                 ),
+            //               ),
+            //             ],
+            //           ),
+            //   ),
+            // ),
             SizedBox(width: responsive.w(3)),
             Expanded(
               child: AppButtonWidget(
                 text: 'Accept',
                 onPressed: busy ? null : controller.accept,
                 backgroundColor: AppColors.dashboardAccent,
-                disabledBackgroundColor:
-                    AppColors.dashboardAccent.withValues(alpha: 0.55),
+                disabledBackgroundColor: AppColors.dashboardAccent.withValues(
+                  alpha: 0.55,
+                ),
                 foregroundColor: AppColors.black,
                 borderRadius: responsive.w(3),
                 showTrailingArrow: false,
@@ -248,17 +249,15 @@ class NewReservationRequestView
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: AppTextStyles.small(context).copyWith(
-              color: color,
-              fontWeight: FontWeight.w600,
-            ),
+            style: AppTextStyles.small(
+              context,
+            ).copyWith(color: color, fontWeight: FontWeight.w600),
           ),
         ),
       ],
     );
   }
 }
-
 
 void openNewReservationRequest(ReservationModel reservation) {
   Get.to(

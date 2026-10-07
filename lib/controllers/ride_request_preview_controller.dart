@@ -23,16 +23,18 @@ class RideRequestPreviewController extends GetxController {
     LocationService? location,
     FirestoreService? firestore,
     LatLng? driverPosition,
-  })  : _directions = directions ??
-            (Get.isRegistered<DirectionsService>()
-                ? Get.find<DirectionsService>()
-                : DirectionsService()),
-        _location = location ??
-            (Get.isRegistered<LocationService>()
-                ? Get.find<LocationService>()
-                : LocationService()),
-        _firestore = firestore ?? FirestoreService(),
-        _initialDriverPosition = driverPosition;
+  }) : _directions =
+           directions ??
+           (Get.isRegistered<DirectionsService>()
+               ? Get.find<DirectionsService>()
+               : DirectionsService()),
+       _location =
+           location ??
+           (Get.isRegistered<LocationService>()
+               ? Get.find<LocationService>()
+               : LocationService()),
+       _firestore = firestore ?? FirestoreService(),
+       _initialDriverPosition = driverPosition;
 
   RideModel ride;
   final DirectionsService _directions;
@@ -62,7 +64,7 @@ class RideRequestPreviewController extends GetxController {
   Set<Polyline> _pendingPolylines = {};
   bool _disposed = false;
   bool _initialCameraFitted = false;
-
+  bool _acceptedByCurrentDriver = false;
   static const _polylineId = PolylineId('preview_route');
   static const _driverMarkerId = MarkerId('driver');
 
@@ -80,12 +82,9 @@ class RideRequestPreviewController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    _driverPosition =
-        _initialDriverPosition ?? _location.cachedPosition;
+    _driverPosition = _initialDriverPosition ?? _location.cachedPosition;
     _freezeInitialCameraTarget(
-      ride.pickupLatLng ??
-          ride.dropoffLatLng ??
-          _driverPosition,
+      ride.pickupLatLng ?? ride.dropoffLatLng ?? _driverPosition,
     );
     _applyCachedIconsIfReady();
     _rebuildMarkers();
@@ -101,38 +100,92 @@ class RideRequestPreviewController extends GetxController {
     _mapController = null;
     super.onClose();
   }
+// temp change
+  // void _watchRideStatus() {
+  //   _rideSubscription?.cancel();
+  //   _rideSubscription = _firestore.watchRide(ride.id).listen(
+  //     (updated) {
+  //       if (_disposed || updated == null) return;
+  //       ride = updated;
+  //       final status = updated.status.toLowerCase().trim();
+  //       final claimable =
+  //           status == RideStatus.pending || status == RideStatus.expired;
+  //       final assigned = updated.driverId?.trim() ?? '';
+  //       final uid = Get.isRegistered<AuthController>()
+  //           ? (Get.find<AuthController>().uid ?? '')
+  //           : '';
+  //       final stillMine = assigned.isEmpty || assigned == uid;
+  //       isClaimable.value = claimable && stillMine;
+  //       if (!isClaimable.value) {
+  //         AppSnackbar.info(
+  //           title: 'Ride unavailable',
+  //           message: 'This ride is no longer available.',
+  //         );
+  //         if (Get.isDialogOpen == true || Get.isBottomSheetOpen == true) {
+  //           Get.back();
+  //         }
+  //       }
+  //     },
+  //     onError: (Object error) {
+  //       if (kDebugMode) {
+  //         debugPrint('preview watchRide error: $error');
+  //       }
+  //     },
+  //   );
+  // }
 
   void _watchRideStatus() {
     _rideSubscription?.cancel();
-    _rideSubscription = _firestore.watchRide(ride.id).listen(
-      (updated) {
-        if (_disposed || updated == null) return;
-        ride = updated;
-        final status = updated.status.toLowerCase().trim();
-        final claimable =
-            status == RideStatus.pending || status == RideStatus.expired;
-        final assigned = updated.driverId?.trim() ?? '';
-        final uid = Get.isRegistered<AuthController>()
-            ? (Get.find<AuthController>().uid ?? '')
-            : '';
-        final stillMine = assigned.isEmpty || assigned == uid;
-        isClaimable.value = claimable && stillMine;
-        if (!isClaimable.value) {
-          AppSnackbar.info(
-            title: 'Ride unavailable',
-            message: 'This ride is no longer available.',
-          );
-          if (Get.isDialogOpen == true || Get.isBottomSheetOpen == true) {
-            Get.back();
-          }
-        }
-      },
-      onError: (Object error) {
-        if (kDebugMode) {
-          debugPrint('preview watchRide error: $error');
-        }
-      },
-    );
+
+    _rideSubscription = _firestore
+        .watchRide(ride.id)
+        .listen(
+          (updated) {
+            if (_disposed || updated == null) return;
+
+            ride = updated;
+
+            final status = updated.status.toLowerCase().trim();
+            final assigned = updated.driverId?.trim() ?? '';
+
+            final uid = Get.isRegistered<AuthController>()
+                ? (Get.find<AuthController>().uid ?? '').trim()
+                : '';
+
+            // Ride is assigned to this driver.
+            // This means the ride was successfully accepted by us.
+            if (assigned.isNotEmpty && assigned == uid) {
+              _acceptedByCurrentDriver = true;
+              isClaimable.value = false;
+              return;
+            }
+
+            final claimable =
+                status == RideStatus.pending || status == RideStatus.expired;
+
+            final stillMine = assigned.isEmpty || assigned == uid;
+
+            isClaimable.value = claimable && stillMine;
+
+            // Only show unavailable if another driver took it
+            // or it became unavailable before we accepted it.
+            if (!isClaimable.value && !_acceptedByCurrentDriver) {
+              AppSnackbar.info(
+                title: 'Ride unavailable',
+                message: 'This ride is no longer available.',
+              );
+
+              if (Get.isDialogOpen == true || Get.isBottomSheetOpen == true) {
+                Get.back();
+              }
+            }
+          },
+          onError: (Object error) {
+            if (kDebugMode) {
+              debugPrint('preview watchRide error: $error');
+            }
+          },
+        );
   }
 
   void _freezeInitialCameraTarget(LatLng? target) {
@@ -144,10 +197,7 @@ class RideRequestPreviewController extends GetxController {
     if (_disposed) return;
     _mapController = controller;
     _publishDecorations();
-    await _fitCamera(
-      routePoints: _pendingRoutePoints,
-      animate: false,
-    );
+    await _fitCamera(routePoints: _pendingRoutePoints, animate: false);
     if (_disposed) return;
     _initialCameraFitted = true;
     isMapReady.value = true;
@@ -192,10 +242,7 @@ class RideRequestPreviewController extends GetxController {
 
       _pendingRoutePoints = route.points;
       _pendingPolylines = {
-        buildMapRoutePolyline(
-          id: _polylineId,
-          points: route.points,
-        ),
+        buildMapRoutePolyline(id: _polylineId, points: route.points),
       };
       _publishDecorations();
       routeDistanceText.value = route.distanceText;
@@ -281,11 +328,9 @@ class RideRequestPreviewController extends GetxController {
           markerId: const MarkerId('pickup'),
           position: pickup,
           anchor: const Offset(0.5, 1.0),
-          infoWindow: InfoWindow(
-            title: 'Pickup',
-            snippet: ride.pickupLocation,
-          ),
-          icon: _pickupIcon ??
+          infoWindow: InfoWindow(title: 'Pickup', snippet: ride.pickupLocation),
+          icon:
+              _pickupIcon ??
               BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         ),
       );
@@ -302,7 +347,8 @@ class RideRequestPreviewController extends GetxController {
             title: 'Dropoff',
             snippet: ride.dropoffLocation,
           ),
-          icon: _dropoffIcon ??
+          icon:
+              _dropoffIcon ??
               BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
         ),
       );
@@ -320,7 +366,8 @@ class RideRequestPreviewController extends GetxController {
             title: 'Stop ${i + 1}',
             snippet: ride.stops[i].location,
           ),
-          icon: _stopIcon ??
+          icon:
+              _stopIcon ??
               BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
         ),
       );
@@ -336,10 +383,9 @@ class RideRequestPreviewController extends GetxController {
           zIndexInt: 2,
           flat: true,
           infoWindow: const InfoWindow(title: 'You'),
-          icon: _driverIcon ??
-              BitmapDescriptor.defaultMarkerWithHue(
-                BitmapDescriptor.hueYellow,
-              ),
+          icon:
+              _driverIcon ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
         ),
       );
     }

@@ -147,7 +147,8 @@ class AppText {
   static const String details = "Details";
   static const String dollar = '\$';
 
-  static const String km = 'km';
+  static const String km = 'mi';
+  static const String mi = 'mi';
   static const String min = 'min';
   static const String submit = 'Submit';
   // Reservation

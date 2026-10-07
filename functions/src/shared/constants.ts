@@ -192,3 +192,7 @@ export const RIDE_EXPIRY_MS = 5 * 60 * 1000;
 
 /** Cap FCM fan-out per new ride (no geo filter yet). */
 export const FCM_MAX_DRIVERS = 50;
+
+/** Maximum straight-line distance (miles) a driver can be from pickup to accept a ride. */
+export const RIDE_REQUEST_RADIUS_MILES = 1.0;
+

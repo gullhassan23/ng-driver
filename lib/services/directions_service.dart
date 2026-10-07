@@ -224,7 +224,7 @@ class DirectionsService {
       distanceMeters += meters;
       durationSeconds += seconds;
       if (legs.length == 1) {
-        distanceText = (distance?['text'] as String?) ?? '';
+        distanceText = _formatDistance(distanceMeters);
         durationText = (duration?['text'] as String?) ?? '';
       }
     }

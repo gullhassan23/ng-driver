@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 
 import '../models/reservation_model.dart';
 import '../services/firestore_service.dart';
+import 'auth_controller.dart';
 
 /// Single shell-scoped Firestore listener for the entire `reservations`
 /// collection. Pending / Confirm / History controllers consume this feed
@@ -40,12 +41,20 @@ class ReservationFeedController extends GetxController {
 
   void ensureListening() {
     if (_started && _subscription != null) return;
+    
+    final uid = Get.isRegistered<AuthController>() ? Get.find<AuthController>().uid : null;
+    if (uid == null || uid.isEmpty) {
+      errorMessage.value = 'User not authenticated';
+      isLoading.value = false;
+      return;
+    }
+
     _started = true;
     isLoading.value = true;
     errorMessage.value = null;
     _subscription?.cancel();
 
-    _subscription = _firestore.watchReservations().listen(
+    _subscription = _firestore.watchReservations(uid).listen(
       (items) {
         reservations.assignAll(
           items

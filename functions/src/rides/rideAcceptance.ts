@@ -1,10 +1,11 @@
-import {FieldValue, getFirestore} from "firebase-admin/firestore";
+import {FieldValue, Timestamp, getFirestore} from "firebase-admin/firestore";
 import {logger} from "firebase-functions";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
 
 import {
   COLLECTIONS,
   DriverFields,
+  RIDE_REQUEST_RADIUS_MILES,
   RideFields,
   RideStatus,
   isActiveAssignedStatus,
@@ -15,6 +16,7 @@ import {
   failInvalidArgument,
   requireAuth,
 } from "../shared/errors";
+import {milesBetween} from "../shared/geo";
 
 interface AcceptRideRequest {
   rideId?: string;
@@ -58,6 +60,7 @@ export const acceptRide = onCall(async (request) => {
 
   let denial: HttpsError | undefined;
   let resultStatus: string = RideStatus.driverArriving;
+  let distanceMiles: number | undefined;
 
   await db.runTransaction(async (tx) => {
     denial = undefined;
@@ -107,12 +110,22 @@ export const acceptRide = onCall(async (request) => {
       return;
     }
 
-    // Only unclaimed pending/expired rides are claimable.
-    if (status !== RideStatus.pending && status !== RideStatus.expired) {
+    // Only unclaimed pending rides whose offer window is still open are claimable.
+    if (status !== RideStatus.pending) {
       denial = new HttpsError(
         "failed-precondition",
         SafeMessages.rideUnavailable,
       );
+      return;
+    }
+
+    // Reject atomically if the ride's offer window has already closed.
+    // This guards the <=1-min CF scheduler lag and the simultaneous-accept race.
+    const expiresAtRaw = rideSnap.get(RideFields.expiresAt) as
+      | Timestamp
+      | undefined;
+    if (expiresAtRaw !== undefined && expiresAtRaw.toMillis() <= Date.now()) {
+      denial = new HttpsError("failed-precondition", SafeMessages.expired);
       return;
     }
 
@@ -132,6 +145,39 @@ export const acceptRide = onCall(async (request) => {
     const pickupLongitude = optionalFiniteNumber(
       rideSnap.get(RideFields.pickupLongitude),
     );
+
+    if (pickupLatitude === undefined || pickupLongitude === undefined) {
+      denial = new HttpsError(
+        "failed-precondition",
+        SafeMessages.rideUnavailable,
+      );
+      return;
+    }
+
+    if (driverLatitude === undefined || driverLongitude === undefined) {
+      denial = new HttpsError(
+        "failed-precondition",
+        SafeMessages.locationRequired,
+      );
+      return;
+    }
+
+    const calculatedDistance = milesBetween(
+      driverLatitude,
+      driverLongitude,
+      pickupLatitude,
+      pickupLongitude,
+    );
+
+    if (calculatedDistance > RIDE_REQUEST_RADIUS_MILES) {
+      denial = new HttpsError(
+        "failed-precondition",
+        SafeMessages.outsideRadius,
+      );
+      return;
+    }
+
+    distanceMiles = calculatedDistance;
 
     const rideUpdate: Record<string, unknown> = {
       [RideFields.status]: RideStatus.driverArriving,
@@ -178,6 +224,7 @@ export const acceptRide = onCall(async (request) => {
     rideId,
     driverId: uid,
     status: resultStatus,
+    distanceMiles,
     hasLocation: driverLatitude !== undefined && driverLongitude !== undefined,
   });
 

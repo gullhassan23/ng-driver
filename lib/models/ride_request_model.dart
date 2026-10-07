@@ -88,15 +88,17 @@ class RideRequestModel {
   /// e.g. `$221`
   String get formattedFare => '\$${fare.round()}';
 
-  /// e.g. `~1.5 km` for longer trips, `~448 m` under a kilometre.
+  /// e.g. `~1.5 mi` for longer trips, `~800 ft` under 0.1 mile.
   String get formattedDistance {
     if (distanceKm <= 0) return '';
 
-    if (distanceKm < 1) {
-      return '~${(distanceKm * 1000).round()} m';
+    final miles = distanceKm * 0.621371;
+    if (miles < 0.1) {
+      final feet = (miles * 5280).round();
+      return '~$feet ft';
     }
 
-    return '~${distanceKm.toStringAsFixed(1)} km';
+    return '~${miles.toStringAsFixed(1)} mi';
   }
 
   /// e.g. `7 min`

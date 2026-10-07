@@ -5,7 +5,7 @@ import 'package:ngtowncardriver/constants/global.dart';
 import 'package:ngtowncardriver/views/rides/distance_time_card.dart';
 import 'package:ngtowncardriver/views/rides/map_button.dart';
 import 'package:ngtowncardriver/views/rides/ride_arrived_banner.dart';
-import 'package:ngtowncardriver/views/rides/safery_banner.dart';
+import 'package:ngtowncardriver/views/rides/safety_banner.dart';
 import 'package:ngtowncardriver/widgets/address/address_row.dart';
 import 'package:ngtowncardriver/widgets/ride/cancel_button.dart';
 import 'package:ngtowncardriver/widgets/ride/chat_button.dart';
@@ -18,8 +18,6 @@ import '../../routes/app_routes.dart';
 import '../../utilis/app_colors.dart';
 import '../../widgets/location/location_permission_banner.dart';
 import '../../widgets/reactive_app_map.dart';
-
-
 
 class ActiveRideView extends GetView<ActiveRideController> {
   const ActiveRideView({super.key});
@@ -212,8 +210,9 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                   Expanded(
                                     child: SafetyBanner(
                                       onTap: () async {
-                                        final trimmed =
-                                            AppConfig.driverPoliciesUrl.trim();
+                                        final trimmed = AppConfig
+                                            .driverPoliciesUrl
+                                            .trim();
                                         if (trimmed.isEmpty) return;
 
                                         final uri = Uri.tryParse(trimmed);
@@ -307,13 +306,14 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                                   ? 'Pickup'
                                                   : ride.pickupLocation,
                                             ),
-                                            for (var i = 0;
-                                                i < ride.stops.length;
-                                                i++) ...[
+                                            for (
+                                              var i = 0;
+                                              i < ride.stops.length;
+                                              i++
+                                            ) ...[
                                               const SizedBox(height: 10),
                                               AddressRow(
-                                                asset:
-                                                    'assets/images/stop.png',
+                                                asset: 'assets/images/stop.png',
                                                 text: stopRowText(ride, i),
                                               ),
                                             ],
@@ -330,7 +330,6 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                       const SizedBox(width: 10),
                                       Column(
                                         children: [
-                                      
                                           Obx(
                                             () => LimeActionButton(
                                               icon: Icons.chat_bubble_rounded,
@@ -444,10 +443,13 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
                                         ),
                                         const SizedBox(width: 10),
                                       ],
-                                      CancelSquareButton(
-                                        onTap: controller.isUpdating.value
-                                            ? null
-                                            : controller.onCancelRide,
+                                      Obx(
+                                        () => CancelSquareButton(
+                                          loading: controller.isUpdating.value,
+                                          onTap: controller.isUpdating.value
+                                              ? null
+                                              : controller.onCancelRide,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -467,21 +469,4 @@ class _ActiveRideStack extends GetView<ActiveRideController> {
       ],
     );
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 }

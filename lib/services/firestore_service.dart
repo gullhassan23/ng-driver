@@ -12,6 +12,7 @@ import '../models/ride_model.dart';
 import '../models/ride_request_model.dart';
 import '../utilis/driver_ride_snapshot.dart';
 import '../utilis/firestore_paths.dart';
+import '../utilis/geo.dart';
 
 /// Reads and writes the collections shared with the NG Town Ride user app.
 class FirestoreService {
@@ -242,18 +243,53 @@ class FirestoreService {
 
   /// Live feed of rides waiting for a driver decision.
   ///
-  /// Includes `expired` while the 5-minute timer is skipped so older rides
-  /// remain claimable. Equality/`whereIn` only (no orderBy) so a composite
-  /// index is not required; newest-first ordering is applied in memory.
-  Stream<List<RideModel>> pendingRides({int limit = 20}) {
+  /// Only `status == 'pending'` rides are queried; `expired` is deliberately
+  /// excluded because an expired ride must no longer appear in the offer feed.
+  /// A secondary client-side filter removes any ride whose `expiresAt` has
+  /// already passed, covering the ≤1-minute Cloud Function scheduler lag.
+  ///
+  /// Uses equality-only (no orderBy) so no composite index is required;
+  /// newest-first ordering is applied in memory.
+  Stream<List<RideModel>> pendingRides({
+    int limit = 20,
+    double? driverLatitude,
+    double? driverLongitude,
+    double? maxRadiusMiles,
+  }) {
     return _rides
         .where(
           RideFields.status,
-          whereIn: [RideStatus.pending, RideStatus.expired],
+          isEqualTo: RideStatus.pending,
         )
         .snapshots()
         .map((snapshot) {
-          final rides = snapshot.docs.map(RideModel.fromDoc).toList()
+          final now = DateTime.now();
+          final rides = snapshot.docs
+              .map(RideModel.fromDoc)
+              .where((ride) {
+                // Client-side expiry filter: covers the CF scheduler lag window.
+                // Rides with no expiresAt field are kept (backward-compat).
+                final exp = ride.expiresAt;
+                if (exp != null && !exp.isAfter(now)) return false;
+
+                if (driverLatitude != null &&
+                    driverLongitude != null &&
+                    maxRadiusMiles != null) {
+                  final pLat = ride.pickupLatitude;
+                  final pLng = ride.pickupLongitude;
+                  if (pLat == null || pLng == null) return false;
+                  final dist = milesBetween(
+                    driverLatitude,
+                    driverLongitude,
+                    pLat,
+                    pLng,
+                  );
+                  if (dist > maxRadiusMiles) return false;
+                }
+
+                return true;
+              })
+              .toList()
             ..sort((a, b) {
               final aTime = a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
               final bTime = b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -432,12 +468,22 @@ class FirestoreService {
     return controller.stream;
   }
 
-  /// Live stream of all documents in the `reservations` collection.
+  /// Live stream of documents in the `reservations` collection for this driver.
   ///
+  /// Includes pending reservations (open to all drivers) and any reservation
+  /// assigned to [driverId].
   /// Sorts in memory by `createdAt` (fallback `pickupDate`) so no composite
   /// index is required.
-  Stream<List<ReservationModel>> watchReservations() {
-    return _reservations.snapshots().map((snapshot) {
+  Stream<List<ReservationModel>> watchReservations(String driverId) {
+    return _reservations
+        .where(
+          Filter.or(
+            Filter(ReservationFields.status, isEqualTo: ReservationStatus.pending),
+            Filter(ReservationFields.driverId, isEqualTo: driverId),
+          ),
+        )
+        .snapshots()
+        .map((snapshot) {
       final reservations = snapshot.docs.map(ReservationModel.fromDoc).toList()
         ..sort((a, b) {
           DateTime sortKey(ReservationModel reservation) =>
@@ -828,7 +874,8 @@ class FirestoreService {
         if (assigned.isNotEmpty && assigned != driverId) {
           throw StateError('Another driver accepted this ride first.');
         }
-        if (status != RideStatus.pending && status != RideStatus.expired) {
+        // Only allow fallback claim for pending, non-expired rides.
+        if (status != RideStatus.pending || latest.isOfferExpired) {
           throw StateError('Ride is no longer available.');
         }
       }
@@ -902,8 +949,16 @@ class FirestoreService {
         throw StateError('Another driver accepted this ride first.');
       }
 
-      if (status != RideStatus.pending && status != RideStatus.expired) {
+      // Only unclaimed pending rides whose offer window is still open are claimable.
+      if (status != RideStatus.pending) {
         throw StateError('Ride is no longer available.');
+      }
+
+      // Reject if the ride's offer window has already closed (mirrors the CF check).
+      final expiresAtRaw = data[RideFields.expiresAt];
+      if (expiresAtRaw is Timestamp &&
+          expiresAtRaw.toDate().isBefore(DateTime.now())) {
+        throw StateError('This ride has expired.');
       }
 
       final txnDriverData =
@@ -918,6 +973,24 @@ class FirestoreService {
         );
       }
 
+      final pickupLat = _optionalNumber(data, RideFields.pickupLatitude);
+      final pickupLng = _optionalNumber(data, RideFields.pickupLongitude);
+      if (pickupLat == null || pickupLng == null) {
+        throw StateError('Ride is no longer available.');
+      }
+      if (driverLatitude == null || driverLongitude == null) {
+        throw StateError('Driver location is required to accept this ride.');
+      }
+      final distanceMiles = milesBetween(
+        driverLatitude,
+        driverLongitude,
+        pickupLat,
+        pickupLng,
+      );
+      if (distanceMiles > rideRequestRadiusMiles) {
+        throw StateError('Ride is outside your 1-mile pickup radius.');
+      }
+
       final rideUpdate = <String, dynamic>{
         RideFields.status: RideStatus.driverArriving,
         RideFields.driverId: driverId,
@@ -928,8 +1001,8 @@ class FirestoreService {
           driverData: driverData,
           driverLatitude: driverLatitude,
           driverLongitude: driverLongitude,
-          pickupLatitude: _optionalNumber(data, RideFields.pickupLatitude),
-          pickupLongitude: _optionalNumber(data, RideFields.pickupLongitude),
+          pickupLatitude: pickupLat,
+          pickupLongitude: pickupLng,
         ),
       };
 

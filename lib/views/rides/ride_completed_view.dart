@@ -930,6 +930,7 @@ class RideDetail extends GetView<RideDetailController> {
                           vehicle: vehicle,
                           passenger: passenger,
                           fare: fare,
+                          cancelReason: ride.cancelReason,
                           rating: ride.riderRating,
                           review: ride.riderReview,
                           responsive: responsive,
@@ -1042,7 +1043,9 @@ class _StatusBanner extends StatelessWidget {
           ),
           SizedBox(height: responsive.h(0.4)),
           Text(
-            isCanceled ? cancelReason : 'You dropped off $passenger',
+            isCanceled
+                ? (cancelReason.trim().isNotEmpty ? cancelReason.trim() : 'Ride was cancelled by the passenger.')
+                : 'You dropped off $passenger',
             textAlign: TextAlign.center,
             style: AppTextStyles.small(context).copyWith(
               fontSize: responsive.h(1.45),
@@ -1292,6 +1295,7 @@ class _DetailsCard extends StatelessWidget {
     required this.vehicle,
     required this.passenger,
     required this.fare,
+    required this.cancelReason,
     required this.rating,
     required this.review,
     required this.responsive,
@@ -1305,6 +1309,7 @@ class _DetailsCard extends StatelessWidget {
   final String vehicle;
   final String passenger;
   final String fare;
+  final String cancelReason;
   final int? rating;
   final String review;
   final ResponsiveRepo responsive;
@@ -1465,8 +1470,16 @@ class _DetailsCard extends StatelessWidget {
                     title: 'Vehicle',
                     value: vehicle,
                     responsive: responsive,
-                    isLast: true,
+                    isLast: !isCanceled || cancelReason.trim().isEmpty,
                   ),
+                  if (isCanceled && cancelReason.trim().isNotEmpty)
+                    _DetailRow(
+                      icon: Icons.info_outline_rounded,
+                      title: 'Cancellation Reason',
+                      value: cancelReason.trim(),
+                      responsive: responsive,
+                      isLast: true,
+                    ),
                 ],
               ),
             ),

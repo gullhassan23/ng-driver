@@ -11,6 +11,8 @@ export const SafeMessages = {
   notAssigned: "You are not assigned to this ride.",
   invalidStatus: "This ride cannot be updated.",
   invalidArgument: "Invalid request.",
+  outsideRadius: "Ride is outside your 1-mile pickup radius.",
+  locationRequired: "Driver location is required to accept this ride.",
 } as const;
 
 export function requireAuth(uid: string | undefined): string {

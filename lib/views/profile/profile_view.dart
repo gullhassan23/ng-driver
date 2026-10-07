@@ -230,7 +230,7 @@ class _ProfileViewState extends State<ProfileView> {
                         bottom: 2,
                         child: GestureDetector(
                           onTap: () {
-                            // TODO: Pick profile photo
+                           
                           },
                           child: Container(
                             width: 32,
@@ -353,7 +353,7 @@ class _ProfileViewState extends State<ProfileView> {
               //   title: 'Terms of Service',
               //   icon: Icons.description_outlined,
               //   onTap: () {
-              //     // TODO: Terms of Service
+
               //   },
               // ),
 
@@ -362,7 +362,7 @@ class _ProfileViewState extends State<ProfileView> {
               //   title: 'Privacy Policy',
               //   icon: Icons.privacy_tip_outlined,
               //   onTap: () {
-              //     // TODO: Privacy Policy
+
               //   },
               // ),
 
@@ -482,7 +482,7 @@ class _ProfileViewState extends State<ProfileView> {
               onPressed: () {
                 Navigator.pop(context);
                 Get.find<AuthController>().signOut();
-                // TODO: Logout
+            
               },
               child: Text(
                 'Logout',

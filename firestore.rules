@@ -244,6 +244,14 @@ service cloud.firestore {
         && isAssignedLiveStatus(request.resource.data.status)
         && isValidSelectedDriverId(request.resource.data.driverId);
     }
+    // Rider may cancel a search or an assigned live ride that is not finished.
+    function isRiderCancellableStatus(status) {
+      return status == 'pending'
+        || isActiveAssignedStatus(status)
+        || isAssignedLiveStatus(status);
+    }
+
+
 
 
     // ============================================================
@@ -402,14 +410,17 @@ service cloud.firestore {
 
       allow update: if isSignedIn() && (
 
-        // Rider cancels pending ride
+        // Rider cancels own ride (pending search or assigned live ride).
         (
-          resource.data.status == 'pending'
-          && resource.data.customerId == request.auth.uid
-          && request.resource.data.status == 'cancelled'
-          && request.resource.data.customerId == resource.data.customerId
+          isRideOwner(resource.data)
+          && isRideOwner(request.resource.data)
+          && rideCustomerId(request.resource.data)
+              == rideCustomerId(resource.data)
           && request.resource.data.get('driverId', null)
               == resource.data.get('driverId', null)
+          && request.resource.data.status == 'cancelled'
+          && isRiderCancellableStatus(resource.data.status)
+          && !(resource.data.status in ['completed', 'cancelled', 'expired'])
         )
 
         // Rider accepts / selects an offered driver on their own ride.
@@ -495,12 +506,14 @@ service cloud.firestore {
               ])
         )
 
-        // Approved driver claims pending / expired ride
-        // (pending → driver_arriving; legacy accepted / driver_selected kept for old clients)
+        // Approved driver claims a pending ride
+        // (pending -> driver_arriving; legacy accepted / driver_selected kept for old clients).
+        // Security boundary: only allow if expiresAt has not yet passed.
         || (
-          (
-            resource.data.status == 'pending'
-            || resource.data.status == 'expired'
+          resource.data.status == 'pending'
+          && (
+            !('expiresAt' in resource.data)
+            || resource.data.expiresAt > request.time
           )
           && (
             request.resource.data.status == 'driver_arriving'
@@ -685,6 +698,23 @@ service cloud.firestore {
             && resource.data.status in ['driver_accepted', 'rider_selected']
             && request.resource.data.status in ['rider_selected', 'rider_declined']
             && request.resource.data.get('driverId', resource.data.get('driverId', driverId))
+
+          // Rider cancels an offer with the ride (best-effort cleanup).
+          // Ride status may already be cancelled because the app writes
+          // the ride document first, then this offer.
+          || (
+            isSignedIn()
+            && exists(/databases/$(database)/documents/rides/$(rideId))
+            && isRideOwner(rideDoc(rideId).data)
+            && resource.data.status in [
+              'driver_accepted',
+              'rider_selected',
+              'rider_declined'
+            ]
+            && request.resource.data.status == 'cancelled'
+            && request.resource.data.get('driverId', resource.data.get('driverId', driverId))
+                == resource.data.get('driverId', driverId)
+          )
                 == resource.data.get('driverId', driverId)
           )
         );
@@ -761,12 +791,12 @@ service cloud.firestore {
 
     match /reservations/{reservationId} {
 
-      // Owner, assigned driver, or any approved driver (dispatch list).
+      // Owner, assigned driver, or any approved driver for pending reservations.
       allow read: if isSignedIn()
         && (
           isReservationOwner(resource.data)
           || resource.data.get('driverId', '') == request.auth.uid
-          || isApprovedDriver()
+          || (isApprovedDriver() && resource.data.status == 'pending')
         );
 
       // User creates own reservation.

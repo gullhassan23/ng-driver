@@ -3,8 +3,9 @@ import 'dart:async';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart'; // keep for VoidCallback & BuildContext used below
+import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/driver_model.dart';
 import '../models/ride_model.dart';
@@ -16,6 +17,7 @@ import '../services/map_warmup_service.dart';
 import '../services/notification_service.dart';
 import '../services/ride_alert_service.dart';
 import '../utilis/firestore_paths.dart';
+import '../utilis/geo.dart';
 import '../widgets/app_snackbar_widget.dart';
 import 'auth_controller.dart';
 import 'ride_history_feed_controller.dart';
@@ -144,7 +146,14 @@ class DashboardController extends GetxController {
   StreamSubscription<List<RideModel>>? _ridesSubscription;
   StreamSubscription<String>? _tokenSubscription;
   StreamSubscription<DriverModel?>? _driverSubscription;
+  StreamSubscription<Position>? _driverLocationSubscription;
   Worker? _historyFeedWorker;
+
+  /// Current driver GPS fix used for client-side pending ride distance filtering.
+  LatLng? _currentDriverPosition;
+
+  /// Raw pending rides received from Firestore before client-side distance & cooldown filters.
+  List<RideModel> _latestPendingRides = const [];
 
   @override
   void onInit() {
@@ -364,6 +373,7 @@ class DashboardController extends GetxController {
 
   @override
   void onClose() {
+    _driverLocationSubscription?.cancel();
     _requestsSubscription?.cancel();
     _ridesSubscription?.cancel();
     _tokenSubscription?.cancel();
@@ -427,20 +437,61 @@ class DashboardController extends GetxController {
   static const String _rideIdKey = 'rideId';
 
   void _startPendingRideListeners() {
+    _startDriverLocationListener();
     _listenForRideRequests();
     _listenForPendingRides();
   }
 
   void _stopPendingRideListeners() {
+    _stopDriverLocationListener();
     _requestsSubscription?.cancel();
     _requestsSubscription = null;
     _ridesSubscription?.cancel();
     _ridesSubscription = null;
+    _latestPendingRides = const [];
     // Clear known IDs so next online session detects fresh rides as new.
     _knownRideIds.clear();
     // Cancel pending cooldown timers — no rides to reappear while offline.
     _cancelAllDeclineTimers();
     unawaited(_rideAlert.stop());
+  }
+
+  void _startDriverLocationListener() {
+    _driverLocationSubscription?.cancel();
+
+    final cached = _location.cachedPosition;
+    if (cached != null) {
+      _currentDriverPosition = cached;
+    }
+
+    _location.getPositionQuick().then((pos) {
+      if (isClosed || !isRideOnline) return;
+      if (pos != null) {
+        _currentDriverPosition = pos;
+        _reapplyPendingRidesFilter();
+      }
+    });
+
+    _driverLocationSubscription = _location
+        .positionStream(distanceFilterMeters: 25, enableBackground: false)
+        .listen(
+      (pos) {
+        final latLng = LatLng(pos.latitude, pos.longitude);
+        _location.cachePosition(latLng);
+        _currentDriverPosition = latLng;
+        _reapplyPendingRidesFilter();
+      },
+      onError: (Object error) {
+        if (kDebugMode) {
+          debugPrint('Dashboard positionStream error: $error');
+        }
+      },
+    );
+  }
+
+  void _stopDriverLocationListener() {
+    _driverLocationSubscription?.cancel();
+    _driverLocationSubscription = null;
   }
 
   // ==========================================
@@ -467,38 +518,74 @@ class DashboardController extends GetxController {
 
     _ridesSubscription = _firestore.pendingRides().listen(
       (pending) {
-        // Exclude rides the driver declined that are still in their cooldown window.
-        // Rides whose cooldown has expired are automatically re-included here;
-        // the filter helper cleans up the expiry map as it goes.
-        final filtered = pending
-            .where((ride) => !_isDeclinedAndCoolingDown(ride.id))
-            .toList();
-
-        // Detect any ride IDs that weren't in our known set yet.
-        // A ride that reappears after cooldown is already in _knownRideIds,
-        // so no duplicate alert plays — correct behaviour.
-        bool hasNewRide = false;
-        for (final ride in filtered) {
-          if (!_knownRideIds.contains(ride.id)) {
-            hasNewRide = true;
-            _knownRideIds.add(ride.id);
-          }
-        }
-
-        rides.assignAll(filtered);
-        errorMessage.value = null;
-        isLoading.value = false;
-
-        // Play alert only when a truly new ride arrives.
-        if (hasNewRide && filtered.isNotEmpty) {
-          unawaited(_rideAlert.playNewRideAlert());
-        }
+        _latestPendingRides = pending;
+        _reapplyPendingRidesFilter();
       },
       onError: (Object error) {
         errorMessage.value = 'Could not load pending rides. Pull to retry.';
         isLoading.value = false;
       },
     );
+  }
+
+  void _reapplyPendingRidesFilter() {
+    if (_ridesSubscription == null) return;
+
+    // Filter pending rides by:
+    // 1. Not declined and in cooldown window
+    // 2. Offer window has not expired
+    // 3. Driver current location is within 1.0 mile of ride pickup location
+    final filtered = _latestPendingRides
+        .where(
+          (ride) =>
+              !_isDeclinedAndCoolingDown(ride.id) &&
+              _isRideAvailableForOffer(ride) &&
+              _isRideWithinRadius(ride),
+        )
+        .toList();
+
+    // Detect any ride IDs that weren't in our known set yet.
+    // A ride that reappears after cooldown is already in _knownRideIds,
+    // so no duplicate alert plays — correct behaviour.
+    bool hasNewRide = false;
+    for (final ride in filtered) {
+      if (!_knownRideIds.contains(ride.id)) {
+        hasNewRide = true;
+        _knownRideIds.add(ride.id);
+      }
+    }
+
+    rides.assignAll(filtered);
+    errorMessage.value = null;
+    isLoading.value = false;
+
+    // Play alert only when a truly new ride arrives.
+    if (hasNewRide && filtered.isNotEmpty) {
+      unawaited(_rideAlert.playNewRideAlert());
+    }
+  }
+
+  /// Returns `true` only when the ride pickup is within [rideRequestRadiusMiles]
+  /// (1.0 mile) of the driver's current position.
+  ///
+  /// If the driver's location is unavailable or pickup coordinates are missing/invalid,
+  /// returns `false` (never assume eligible when coordinates cannot be validated).
+  bool _isRideWithinRadius(RideModel ride) {
+    final driverPos = _currentDriverPosition;
+    if (driverPos == null) return false;
+
+    final pickupLat = ride.pickupLatitude;
+    final pickupLng = ride.pickupLongitude;
+    if (pickupLat == null || pickupLng == null) return false;
+
+    final distanceMiles = milesBetween(
+      driverPos.latitude,
+      driverPos.longitude,
+      pickupLat,
+      pickupLng,
+    );
+
+    return distanceMiles <= rideRequestRadiusMiles;
   }
 
   // ── Decline-cooldown helpers ─────────────────────────────────────────────
@@ -516,6 +603,17 @@ class DashboardController extends GetxController {
       return false;
     }
     return true; // Still in cooldown window.
+  }
+
+  /// Returns `true` when the ride is genuinely available for the driver to
+  /// accept: status must be `pending` and the offer window must not have closed.
+  ///
+  /// This is a client-side pre-filter that covers the ≤1-minute gap between
+  /// when `expiresAt` passes and when the Cloud Function marks the ride as
+  /// `expired`. The server (CF + Firestore Rules) remains the authority.
+  bool _isRideAvailableForOffer(RideModel ride) {
+    if (ride.status != RideStatus.pending) return false;
+    return !ride.isOfferExpired;
   }
 
   /// Cancels all pending decline timers (used on offline toggle and onClose).
@@ -731,6 +829,15 @@ class DashboardController extends GetxController {
         rides.firstWhereOrNull((item) => item.id == rideId);
 
     if (ride != null) {
+      // Reject stale FCM taps for rides that have already expired.
+      final status = ride.status.toLowerCase().trim();
+      final isExpiredStatus = status == RideStatus.expired;
+      final isExpiredByTime = ride.isOfferExpired;
+      if (isExpiredStatus || (status == RideStatus.pending && isExpiredByTime)) {
+        rides.removeWhere((item) => item.id == rideId);
+        _showRideTakenSnackbar();
+        return;
+      }
       await _openRideFromNotification(ride);
       return;
     }
@@ -754,8 +861,9 @@ class DashboardController extends GetxController {
     final assignedId = ride.driverId?.trim() ?? '';
     final isMine = uid != null && assignedId.isNotEmpty && assignedId == uid;
     final status = ride.status.toLowerCase().trim();
+    // A ride is claimable only if status == pending AND it has not yet expired.
     final claimable =
-        status == RideStatus.pending || status == RideStatus.expired;
+        status == RideStatus.pending && !ride.isOfferExpired;
 
     if (isMine && RideStatus.isActiveAssignedStatus(status)) {
       await _openActiveRide(ride);
@@ -859,16 +967,49 @@ class DashboardController extends GetxController {
     unawaited(_rideAlert.stop());
 
     try {
-      // Prefer a fresh fix when available; still claim if GPS is slow.
+      // Prefer a fresh fix when available; fallback to current position cache.
       final position = await _location.getPositionQuick();
       if (isClosed) return false;
+
+      final driverLat = position?.latitude ?? _currentDriverPosition?.latitude;
+      final driverLng =
+          position?.longitude ?? _currentDriverPosition?.longitude;
+      final pickupLat = ride.pickupLatitude;
+      final pickupLng = ride.pickupLongitude;
+
+      if (driverLat == null || driverLng == null) {
+        AppSnackbar.error(
+          title: 'Could not accept',
+          message: 'Driver location is required to accept this ride.',
+        );
+        return false;
+      }
+
+      if (pickupLat == null || pickupLng == null) {
+        AppSnackbar.error(
+          title: 'Could not accept',
+          message: 'Ride is no longer available.',
+        );
+        rides.removeWhere((item) => item.id == ride.id);
+        return false;
+      }
+
+      final distance = milesBetween(driverLat, driverLng, pickupLat, pickupLng);
+      if (distance > rideRequestRadiusMiles) {
+        AppSnackbar.error(
+          title: 'Could not accept',
+          message: 'Ride is outside your 1-mile pickup radius.',
+        );
+        rides.removeWhere((item) => item.id == ride.id);
+        return false;
+      }
 
       await _firestore.acceptRide(
         rideId: ride.id,
         driverId: uid,
         offeredFare: offeredFare,
-        driverLatitude: position?.latitude,
-        driverLongitude: position?.longitude,
+        driverLatitude: driverLat,
+        driverLongitude: driverLng,
       );
 
       if (isClosed) return false;
@@ -895,19 +1036,27 @@ class DashboardController extends GetxController {
       return true;
     } on StateError catch (error) {
       _showAcceptFailureSnackbar(error.message);
-      if (_isRideTakenOrUnavailable(error.message)) {
+      if (_isRideTakenOrUnavailable(error.message) ||
+          error.message.toLowerCase().contains('outside') &&
+              error.message.toLowerCase().contains('radius')) {
         rides.removeWhere((item) => item.id == ride.id);
       }
       return false;
     } on FirebaseFunctionsException catch (error) {
       _showAcceptFailureSnackbar(error.message);
-      if (_isRideTakenOrUnavailable(error.message)) {
+      final msg = error.message ?? '';
+      if (_isRideTakenOrUnavailable(msg) ||
+          msg.toLowerCase().contains('outside') &&
+              msg.toLowerCase().contains('radius')) {
         rides.removeWhere((item) => item.id == ride.id);
       }
       return false;
     } on FirebaseException catch (error) {
       _showAcceptFailureSnackbar(error.message);
-      if (_isRideTakenOrUnavailable(error.message)) {
+      final msg = error.message ?? '';
+      if (_isRideTakenOrUnavailable(msg) ||
+          msg.toLowerCase().contains('outside') &&
+              msg.toLowerCase().contains('radius')) {
         rides.removeWhere((item) => item.id == ride.id);
       }
       return false;

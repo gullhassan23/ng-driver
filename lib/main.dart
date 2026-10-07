@@ -45,6 +45,7 @@ Future<void> main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   if (kDebugMode) {
     debugPrint(
       'Firebase connected to project: ${Firebase.app().options.projectId}',

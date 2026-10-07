@@ -1,0 +1,1011 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================================================
+    // COMMON FUNCTIONS
+    // ============================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Never allow passwords or password hashes/salts to be stored
+    // in Firestore from the client.
+    function hasForbiddenKeys() {
+      return request.resource.data.keys().hasAny([
+        'password',
+        'passwordHash',
+        'passwordSalt'
+      ]);
+    }
+
+    function driverUidMatches(driverId) {
+      return !('uid' in request.resource.data)
+        || request.resource.data.uid == driverId;
+    }
+
+    // New drivers must start unapproved.
+    function isUnapprovedOnCreate() {
+      return request.resource.data.get('isApproved', false) == false;
+    }
+
+    // Driver cannot change their own approval status.
+    function approvalUnchanged() {
+      return request.resource.data.get('isApproved', false)
+        == resource.data.get('isApproved', false);
+    }
+
+    function isApprovedDriver() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/drivers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/drivers/$(request.auth.uid))
+             .data.get('isApproved', false) == true;
+    }
+
+    function isAssignedDriver(rideData) {
+      return rideData.get('driverId', null) == request.auth.uid;
+    }
+
+    // Canonical active/assigned statuses.
+    // Legacy statuses remain readable/usable only for old data.
+    function isActiveAssignedStatus(status) {
+      return status == 'driver_arriving'
+        || status == 'driver_arrived'
+        || status == 'passenger_arriving'
+        || status == 'ride_started'
+        || status == 'riderArrived'
+        || status == 'inProgress'
+        || status == 'in_progress'
+        || status == 'driver_selected'
+        || status == 'accepted'
+        || status == 'selected';
+    }
+
+    function isLegacyAssignedStatus(status) {
+      return status == 'driver_selected'
+        || status == 'accepted'
+        || status == 'selected'
+        || status == 'driver_accepted';
+    }
+
+    function rideDoc(id) {
+      return get(/databases/$(database)/documents/rides/$(id));
+    }
+
+    function reservationDoc(id) {
+      return get(/databases/$(database)/documents/reservations/$(id));
+    }
+
+    // Rider apps may store the owner as userId, customerId, or uid.
+    // Skip empty/null so a blank userId does not hide customerId.
+    function reservationCustomerId(data) {
+      return data.get('userId', '') is string && data.get('userId', '') != ''
+        ? data.get('userId', '')
+        : data.get('customerId', '') is string && data.get('customerId', '') != ''
+          ? data.get('customerId', '')
+          : data.get('uid', '') is string && data.get('uid', '') != ''
+            ? data.get('uid', '')
+            : '';
+    }
+
+    function isReservationOwner(data) {
+      return isSignedIn() && reservationCustomerId(data) == request.auth.uid;
+    }
+
+    function hasNoAssignedDriver(data) {
+      return !('driverId' in data)
+        || data.driverId == null
+        || data.driverId == '';
+    }
+
+    function reservationStatus(data) {
+      return data.get('status', '') is string && data.get('status', '') != ''
+        ? data.get('status', '').lower()
+        : 'pending';
+    }
+
+    function isPendingReservation(data) {
+      return reservationStatus(data) == 'pending';
+    }
+
+    // Driver app writes `confirm`. Also allow legacy aliases.
+    function isUpcomingReservation(data) {
+      return reservationStatus(data) in [
+        'confirm',
+        'confirmed',
+        'upcoming',
+        'accepted'
+      ];
+    }
+
+    function isLiveReservationStatus(status) {
+      return status == 'driver_arriving'
+        || status == 'driver_arrived'
+        || status == 'ride_started';
+    }
+
+    function isConfirmStatusValue(status) {
+      return status in [
+        'confirm',
+        'confirmed',
+        'upcoming',
+        'accepted'
+      ];
+    }
+
+    function isActiveReservationLifecycle(status) {
+      return isConfirmStatusValue(status)
+        || isLiveReservationStatus(status);
+    }
+
+    function reservationHasNoRide(data) {
+      return !('rideId' in data)
+        || data.rideId == null
+        || data.rideId == '';
+    }
+
+    function reservationDriverClaimKeys() {
+      return [
+        'status',
+        'driverId',
+        'driverName',
+        'driverPhone',
+        'vehicleName',
+        'vehicleNumber',
+        'rideId',
+        'updatedAt',
+        'acceptedAt'
+      ];
+    }
+
+    function reservationLifecycleKeys() {
+      return [
+        'status',
+        'updatedAt',
+        'driverArrivedAt',
+        'startedAt',
+        'completedAt',
+        'cancelledAt'
+      ];
+    }
+
+    function reservationDriverSnapshotFieldsValid() {
+      return request.resource.data.get('driverName', '') is string
+        && request.resource.data.get('driverPhone', '') is string
+        && request.resource.data.get('vehicleName', '') is string
+        && request.resource.data.get('vehicleNumber', '') is string;
+    }
+
+    function reservationAssignedDriverUnchanged() {
+      return request.resource.data.get('driverId', '')
+          == resource.data.get('driverId', '')
+        && request.resource.data.get('driverId', '') == request.auth.uid;
+    }
+
+    function reservationCustomerUnchanged() {
+      return reservationCustomerId(request.resource.data)
+          == reservationCustomerId(resource.data);
+    }
+
+    function reservationIsClaimable(id) {
+      return exists(/databases/$(database)/documents/reservations/$(id))
+        && isPendingReservation(reservationDoc(id).data)
+        && hasNoAssignedDriver(reservationDoc(id).data);
+    }
+
+    // Driver may create the linked ride on Accept (legacy) or later
+    // on Start Ride after the reservation is already confirmed.
+    function reservationAllowsDriverRideCreate(id) {
+      return exists(/databases/$(database)/documents/reservations/$(id))
+        && reservationHasNoRide(reservationDoc(id).data)
+        && reservationCustomerId(reservationDoc(id).data) != ''
+        && (
+          reservationIsClaimable(id)
+          || (
+            isUpcomingReservation(reservationDoc(id).data)
+            && (
+              hasNoAssignedDriver(reservationDoc(id).data)
+              || reservationDoc(id).data.get('driverId', '') == request.auth.uid
+            )
+          )
+        );
+    }
+
+    // Fields the driver app writes on Start Ride
+    // (confirm → driver_arriving + rideId). Snapshot fields are not
+    // rewritten here, so they must not be required as strings.
+    function reservationStartRideKeys() {
+      return [
+        'status',
+        'driverId',
+        'rideId',
+        'updatedAt'
+      ];
+    }
+
+    // After Start Ride: ride and reservation must both be driver_arriving
+    // with matching rideId / reservationId (validated via getAfter).
+    // resId must be passed in — path wildcards are not in helper scope.
+    function reservationStartRideAtomic(rideId, resId) {
+      return rideId is string
+        && rideId != ''
+        && resId is string
+        && resId != ''
+        && existsAfter(/databases/$(database)/documents/rides/$(rideId))
+        && getAfter(/databases/$(database)/documents/rides/$(rideId))
+             .data.status == 'driver_arriving'
+        && getAfter(/databases/$(database)/documents/rides/$(rideId))
+             .data.driverId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/rides/$(rideId))
+             .data.reservationId == resId;
+    }
+
+    function reservationLinkedRideMatchesStatus(expectedStatus, resId) {
+      let linkedRideId = resource.data.get('rideId', '');
+      return linkedRideId is string
+        && linkedRideId != ''
+        && resId is string
+        && resId != ''
+        && request.resource.data.get('rideId', '') == linkedRideId
+        && existsAfter(/databases/$(database)/documents/rides/$(linkedRideId))
+        && getAfter(/databases/$(database)/documents/rides/$(linkedRideId))
+             .data.status == expectedStatus
+        && getAfter(/databases/$(database)/documents/rides/$(linkedRideId))
+             .data.get('reservationId', '') == resId
+        && getAfter(/databases/$(database)/documents/rides/$(linkedRideId))
+             .data.get('driverId', '') == request.auth.uid;
+    }
+
+    // Rider apps may store the owner as customerId, userId, uid, or riderId.
+    function rideCustomerId(data) {
+      return data.get('customerId', '') != ''
+        ? data.get('customerId', '')
+        : data.get('userId', data.get('uid', data.get('riderId', '')));
+    }
+
+    function isRideOwner(data) {
+      return isSignedIn() && rideCustomerId(data) == request.auth.uid;
+    }
+
+    function rideCustomerUnchanged() {
+      return rideCustomerId(request.resource.data)
+          == rideCustomerId(resource.data);
+    }
+
+    // Empty/missing ride status is treated as pending (matches driver app).
+    function rideStatusValue(data) {
+      return data.get('status', '') is string && data.get('status', '') != ''
+        ? data.get('status', '')
+        : 'pending';
+    }
+
+    function isClaimableRideStatus(status) {
+      return status == 'pending' || status == 'expired';
+    }
+
+    // Fields the driver app writes on Accept (pending/expired → driver_arriving).
+    function driverClaimKeys() {
+      return [
+        'status',
+        'driverId',
+        'driverName',
+        'driverFirstName',
+        'driverLastName',
+        'driverPhone',
+        'driverVehicle',
+        'driverVehicleNumber',
+        'driverVehicleType',
+        'driverVehicleMake',
+        'driverVehicleModel',
+        'driverVehicleColor',
+        'driverVehicleRegistration',
+        'driverRating',
+        'driverDistanceMiles',
+        'driverEta',
+        'driverLocation',
+        'driverLatitude',
+        'driverLongitude',
+        'acceptedAt',
+        'arrivingAt',
+        'updatedAt'
+      ];
+    }
+
+    // Assigned driver live tracking writes (GPS + ETA).
+    function driverLiveGpsKeys() {
+      return [
+        'driverLocation',
+        'driverLocationUpdatedAt',
+        'driverLatitude',
+        'driverLongitude',
+        'driverEta',
+        'updatedAt'
+      ];
+    }
+
+    // Rider may cancel a search or an assigned live ride that is not finished.
+    function isRiderCancellableStatus(status) {
+      return status == 'pending'
+        || isActiveAssignedStatus(status)
+        || status == 'driver_selected'
+        || status == 'accepted'
+        || status == 'selected'
+        || status == 'driver_accepted';
+    }
+
+    // ============================================================
+    // USERS
+    // ============================================================
+
+    match /users/{userId} {
+
+      allow read: if isOwner(userId);
+
+      allow create: if isOwner(userId)
+        && !hasForbiddenKeys();
+
+      allow update: if isOwner(userId)
+        && !hasForbiddenKeys();
+
+      allow delete: if false;
+    }
+
+
+    // ============================================================
+    // DRIVERS
+    // ============================================================
+
+    match /drivers/{driverId} {
+
+      // Authenticated users may read driver profiles.
+      allow read: if isSignedIn();
+
+      allow create: if isOwner(driverId)
+        && !hasForbiddenKeys()
+        && driverUidMatches(driverId)
+        && isUnapprovedOnCreate();
+
+      // Driver can update only their own profile and cannot change
+      // their own approval status.
+      //
+      // The old rider-side currentRideId/driver-selection write path
+      // has been removed. The canonical ride document now owns
+      // driver assignment.
+      allow update: if isOwner(driverId)
+        && !hasForbiddenKeys()
+        && driverUidMatches(driverId)
+        && approvalUnchanged();
+
+      // Driver may permanently delete only their own profile document.
+      allow delete: if isOwner(driverId);
+    }
+
+
+    // ============================================================
+    // DRIVER INFORMATION
+    // ============================================================
+
+    match /driver_information/{driverId} {
+
+      allow read: if isSignedIn();
+
+      allow create, update: if isOwner(driverId)
+        && !hasForbiddenKeys()
+        && driverUidMatches(driverId);
+
+      // Driver may permanently delete only their own vehicle/CNIC document.
+      allow delete: if isOwner(driverId);
+    }
+
+
+    // ============================================================
+    // RIDES
+    // Shared between User App + Driver App
+    //
+    // NEW CANONICAL FLOW:
+    //
+    // pending
+    //   -> driver_arriving
+    //   -> driver_arrived
+    //   -> ride_started
+    //   -> completed
+    //
+    // No new driver_selected / accepted / selected state is allowed.
+    // ============================================================
+
+    match /rides/{rideId} {
+
+      // Existing application behavior: authenticated users can read rides.
+      allow read: if isSignedIn();
+
+      // ------------------------------------------------------------
+      // USER CREATES PENDING RIDE
+      // ------------------------------------------------------------
+
+      allow create: if isSignedIn() && (
+
+        // Rider creates a live pending search.
+        (
+          request.resource.data.status == 'pending'
+          && isRideOwner(request.resource.data)
+          && hasNoAssignedDriver(request.resource.data)
+        )
+
+        // Approved driver creates the linked ride when starting
+        // an accepted reservation (status driver_arriving).
+        || (
+          isApprovedDriver()
+          && request.resource.data.status == 'driver_arriving'
+          && request.resource.data.driverId == request.auth.uid
+          && request.resource.data.customerId is string
+          && request.resource.data.customerId != ''
+          && request.resource.data.customerId != request.auth.uid
+          && request.resource.data.reservationId is string
+          && request.resource.data.reservationId != ''
+          && reservationAllowsDriverRideCreate(
+               request.resource.data.reservationId
+             )
+          && reservationCustomerId(
+               reservationDoc(request.resource.data.reservationId).data
+             ) == request.resource.data.customerId
+        )
+      );
+
+      // ------------------------------------------------------------
+      // RIDE UPDATES
+      // ------------------------------------------------------------
+
+      allow update: if isSignedIn() && (
+
+        // ----------------------------------------------------------
+        // RIDER CANCELS OWN RIDE
+        // ----------------------------------------------------------
+        (
+          isRideOwner(resource.data)
+          && isRideOwner(request.resource.data)
+          && rideCustomerId(request.resource.data)
+              == rideCustomerId(resource.data)
+          && request.resource.data.get('driverId', null)
+              == resource.data.get('driverId', null)
+          && request.resource.data.status == 'cancelled'
+          && isRiderCancellableStatus(resource.data.status)
+          && !(resource.data.status in ['completed', 'cancelled', 'expired'])
+        )
+
+        // ----------------------------------------------------------
+        // RIDER EXTENDS PENDING SEARCH
+        // ----------------------------------------------------------
+        || (
+          resource.data.status == 'pending'
+          && isRideOwner(resource.data)
+          && isRideOwner(request.resource.data)
+          && request.resource.data.status == 'pending'
+          && rideCustomerId(request.resource.data)
+              == rideCustomerId(resource.data)
+          && request.resource.data.get('driverId', null)
+              == resource.data.get('driverId', null)
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'expiresAt',
+                'updatedAt'
+              ])
+        )
+
+        // ----------------------------------------------------------
+        // RIDER MARKS ARRIVAL / I'M HERE
+        // Legacy — new flow uses passenger_arriving after driver_arrived.
+        // ----------------------------------------------------------
+        || (
+          resource.data.status == 'driver_arriving'
+          && isRideOwner(resource.data)
+          && isRideOwner(request.resource.data)
+          && rideCustomerId(request.resource.data)
+              == rideCustomerId(resource.data)
+          && request.resource.data.get('driverId', null)
+              == resource.data.get('driverId', null)
+          && request.resource.data.riderArrived == true
+          && (
+            request.resource.data.status == 'driver_arriving'
+            || request.resource.data.status == 'riderArrived'
+          )
+        )
+
+        // ----------------------------------------------------------
+        // RIDER: I'M COMING — driver_arrived → passenger_arriving
+        // ----------------------------------------------------------
+        || (
+          resource.data.status == 'driver_arrived'
+          && isRideOwner(resource.data)
+          && isRideOwner(request.resource.data)
+          && rideCustomerId(request.resource.data)
+              == rideCustomerId(resource.data)
+          && request.resource.data.get('driverId', null)
+              == resource.data.get('driverId', null)
+          && request.resource.data.status == 'passenger_arriving'
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'status',
+                'updatedAt'
+              ])
+        )
+
+        // ----------------------------------------------------------
+        // RIDER COMPLETES OWN RIDE
+        // Preserved from the existing architecture.
+        // ----------------------------------------------------------
+        || (
+          isRideOwner(resource.data)
+          && isRideOwner(request.resource.data)
+          && rideCustomerId(request.resource.data)
+              == rideCustomerId(resource.data)
+          && request.resource.data.driverId
+              == resource.data.driverId
+          && request.resource.data.status == 'completed'
+          && isActiveAssignedStatus(resource.data.status)
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'status',
+                'completedAt',
+                'updatedAt'
+              ])
+        )
+
+        // ----------------------------------------------------------
+        // RIDER RATES ASSIGNED DRIVER AFTER COMPLETE
+        // One-time write: riderRating 1–5 + ratedAt.
+        // ----------------------------------------------------------
+        || (
+          resource.data.status == 'completed'
+          && isRideOwner(resource.data)
+          && isRideOwner(request.resource.data)
+          && request.resource.data.status == 'completed'
+          && rideCustomerId(request.resource.data)
+              == rideCustomerId(resource.data)
+          && request.resource.data.get('driverId', null)
+              == resource.data.get('driverId', null)
+          && resource.data.get('driverId', '') is string
+          && resource.data.get('driverId', '') != ''
+          && !('riderRating' in resource.data)
+          && request.resource.data.riderRating in [1, 2, 3, 4, 5]
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'riderRating',
+                'ratedAt',
+                'updatedAt'
+              ])
+        )
+
+        // ----------------------------------------------------------
+        // APPROVED DRIVER CLAIMS A PENDING RIDE
+        //
+        // THIS IS THE NEW ACCEPT RIDE OPERATION:
+        //
+        // pending -> driver_arriving
+        //
+        // The accepting driver's UID becomes driverId immediately.
+        // No driver_selected and no rider selection.
+        //
+        // A Firestore transaction in the Driver App must read the ride,
+        // verify pending, then perform this update. These rules ensure
+        // that a second driver cannot overwrite an already-claimed ride.
+        // ----------------------------------------------------------
+        || (
+          isClaimableRideStatus(rideStatusValue(resource.data))
+          && request.resource.data.status == 'driver_arriving'
+          && isApprovedDriver()
+          && request.resource.data.driverId == request.auth.uid
+          && (
+            hasNoAssignedDriver(resource.data)
+            || resource.data.driverId == request.auth.uid
+          )
+          && rideCustomerUnchanged()
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(driverClaimKeys())
+        )
+
+        // ----------------------------------------------------------
+        // APPROVED DRIVER CANCELS A PENDING RIDE
+        // ----------------------------------------------------------
+        || (
+          isClaimableRideStatus(rideStatusValue(resource.data))
+          && request.resource.data.status == 'cancelled'
+          && isApprovedDriver()
+          && request.resource.data.get('driverId', null)
+              == resource.data.get('driverId', null)
+          && rideCustomerUnchanged()
+          && (
+            !('cancelledByDriverId' in request.resource.data)
+            || request.resource.data.cancelledByDriverId == request.auth.uid
+          )
+        )
+
+        // ----------------------------------------------------------
+        // ASSIGNED DRIVER CANCELS ACTIVE RIDE
+        // ----------------------------------------------------------
+        || (
+          isActiveAssignedStatus(resource.data.status)
+          && isAssignedDriver(resource.data)
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.driverId
+              == resource.data.driverId
+          && rideCustomerUnchanged()
+          && isApprovedDriver()
+        )
+
+        // ----------------------------------------------------------
+        // DRIVER_ARRIVING -> DRIVER_ARRIVED
+        // ----------------------------------------------------------
+        || (
+          resource.data.status == 'driver_arriving'
+          && isAssignedDriver(resource.data)
+          && isApprovedDriver()
+          && request.resource.data.status == 'driver_arrived'
+          && request.resource.data.driverId
+              == resource.data.driverId
+          && rideCustomerUnchanged()
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'status',
+                'driverId',
+                'customerId',
+                'driverArrivedAt',
+                'updatedAt'
+              ])
+        )
+
+        // ----------------------------------------------------------
+        // PASSENGER_ARRIVING -> RIDE_STARTED
+        // ----------------------------------------------------------
+        || (
+          resource.data.status == 'passenger_arriving'
+          && isAssignedDriver(resource.data)
+          && isApprovedDriver()
+          && request.resource.data.status == 'ride_started'
+          && request.resource.data.driverId
+              == resource.data.driverId
+          && rideCustomerUnchanged()
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'status',
+                'driverId',
+                'customerId',
+                'rideStartedAt',
+                'startedAt',
+                'updatedAt'
+              ])
+        )
+
+        // ----------------------------------------------------------
+        // RIDE_STARTED -> COMPLETED
+        // ----------------------------------------------------------
+        || (
+          (
+            resource.data.status == 'ride_started'
+            || resource.data.status == 'inProgress'
+            || resource.data.status == 'in_progress'
+          )
+          && isAssignedDriver(resource.data)
+          && isApprovedDriver()
+          && request.resource.data.status == 'completed'
+          && request.resource.data.driverId
+              == resource.data.driverId
+          && rideCustomerUnchanged()
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'status',
+                'driverId',
+                'customerId',
+                'completedAt',
+                'updatedAt'
+              ])
+        )
+
+        // ----------------------------------------------------------
+        // DRIVER LIVE GPS UPDATES
+        // ----------------------------------------------------------
+        || (
+          isAssignedDriver(resource.data)
+          && isApprovedDriver()
+          && request.resource.data.driverId
+              == resource.data.driverId
+          && rideCustomerUnchanged()
+          && request.resource.data.status
+              == resource.data.status
+          && isActiveAssignedStatus(resource.data.status)
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(driverLiveGpsKeys())
+        )
+      );
+
+      allow delete: if false;
+
+      // ------------------------------------------------------------
+      // DRIVER OFFERS
+      //
+      // The new production architecture DOES NOT use driverOffers
+      // to accept or assign rides.
+      //
+      // Old offer documents may remain readable for legacy/history,
+      // but clients cannot create/update/delete new offers.
+      // ------------------------------------------------------------
+
+      match /driverOffers/{driverId} {
+
+        allow read: if isSignedIn();
+
+        allow create, update, delete: if false;
+      }
+
+      // ------------------------------------------------------------
+      // IN-RIDE CHAT MESSAGES
+      // rides/{rideId}/messages/{messageId}
+      // ------------------------------------------------------------
+
+      match /messages/{messageId} {
+
+        allow read: if isSignedIn()
+          && (
+            isRideOwner(rideDoc(rideId).data)
+            || isAssignedDriver(rideDoc(rideId).data)
+          );
+
+        allow create: if isSignedIn()
+          && exists(/databases/$(database)/documents/rides/$(rideId))
+          && isActiveAssignedStatus(rideDoc(rideId).data.status)
+          && request.resource.data.keys().hasOnly([
+            'senderId',
+            'senderType',
+            'message',
+            'createdAt',
+            'read',
+            'type'
+          ])
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.message is string
+          && request.resource.data.message.size() > 0
+          && request.resource.data.message.size() <= 500
+          && request.resource.data.type == 'text'
+          && request.resource.data.read == false
+          && request.resource.data.createdAt == request.time
+          && (
+            (
+              isRideOwner(rideDoc(rideId).data)
+              && request.resource.data.senderType == 'rider'
+            )
+            || (
+              isAssignedDriver(rideDoc(rideId).data)
+              && isApprovedDriver()
+              && request.resource.data.senderType == 'driver'
+            )
+          );
+
+        // Recipient may mark peer messages as read only.
+        allow update: if isSignedIn()
+          && exists(/databases/$(database)/documents/rides/$(rideId))
+          && (
+            isRideOwner(rideDoc(rideId).data)
+            || isAssignedDriver(rideDoc(rideId).data)
+          )
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(['read'])
+          && resource.data.read == false
+          && request.resource.data.read == true
+          && resource.data.senderId != request.auth.uid;
+
+        allow delete: if false;
+      }
+    }
+
+
+    // ============================================================
+    // RESERVATIONS
+    // Scheduled bookings
+    // ============================================================
+
+    match /reservations/{reservationId} {
+
+      // Owner, assigned driver, or any approved driver for pending reservations.
+      allow read: if isSignedIn()
+        && (
+          isReservationOwner(resource.data)
+          || resource.data.get('driverId', '') == request.auth.uid
+          || (isApprovedDriver() && resource.data.status == 'pending')
+        );
+
+      // User creates own reservation.
+      allow create: if isReservationOwner(request.resource.data);
+
+      allow update: if isSignedIn() && (
+
+        // Owner may cancel only. Cannot set driver-controlled live statuses,
+        // overwrite driverId, or forge rideId.
+        (
+          isReservationOwner(resource.data)
+          && reservationCustomerUnchanged()
+          && reservationStatus(request.resource.data) == 'cancelled'
+          && !(reservationStatus(resource.data) in [
+            'completed',
+            'complete',
+            'cancelled',
+            'canceled'
+          ])
+          && request.resource.data.get('driverId', '')
+              == resource.data.get('driverId', '')
+          && request.resource.data.get('rideId', '')
+              == resource.data.get('rideId', '')
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(['status', 'cancelReason', 'cancelledAt', 'updatedAt'])
+        )
+
+        // ----------------------------------------------------------
+        // RIDER RATES ASSIGNED DRIVER AFTER COMPLETE
+        // One-time write: riderRating 1–5 + ratedAt.
+        // ----------------------------------------------------------
+        || (
+          reservationStatus(resource.data) in ['completed', 'complete']
+          && isReservationOwner(resource.data)
+          && isReservationOwner(request.resource.data)
+          && reservationStatus(request.resource.data) in ['completed', 'complete']
+          && reservationCustomerUnchanged()
+          && request.resource.data.get('driverId', '')
+              == resource.data.get('driverId', '')
+          && resource.data.get('driverId', '') is string
+          && resource.data.get('driverId', '') != ''
+          && !('riderRating' in resource.data)
+          && request.resource.data.riderRating in [1, 2, 3, 4, 5]
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'riderRating',
+                'ratedAt',
+                'updatedAt'
+              ])
+        )
+
+        // Approved driver accepts a pending reservation
+        // (pending -> confirm + driverId + driver/vehicle snapshot).
+        || (
+          isApprovedDriver()
+          && isPendingReservation(resource.data)
+          && hasNoAssignedDriver(resource.data)
+          && isUpcomingReservation(request.resource.data)
+          && request.resource.data.driverId == request.auth.uid
+          && reservationCustomerUnchanged()
+          && reservationDriverSnapshotFieldsValid()
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(reservationDriverClaimKeys())
+        )
+
+        // Approved driver starts a confirmed reservation ride:
+        // confirm → driver_arriving + rideId (atomic with rides create).
+        || (
+          isApprovedDriver()
+          && isUpcomingReservation(resource.data)
+          && reservationHasNoRide(resource.data)
+          && (
+            hasNoAssignedDriver(resource.data)
+            || resource.data.get('driverId', '') == request.auth.uid
+          )
+          && request.resource.data.driverId == request.auth.uid
+          && reservationStatus(request.resource.data) == 'driver_arriving'
+          && reservationCustomerUnchanged()
+          && request.resource.data.rideId is string
+          && request.resource.data.rideId != ''
+          && reservationStartRideAtomic(
+               request.resource.data.rideId,
+               reservationId
+             )
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(reservationStartRideKeys())
+        )
+
+        // driver_arriving → driver_arrived (mirrors linked ride).
+        || (
+          isApprovedDriver()
+          && reservationStatus(resource.data) == 'driver_arriving'
+          && reservationStatus(request.resource.data) == 'driver_arrived'
+          && reservationAssignedDriverUnchanged()
+          && reservationCustomerUnchanged()
+          && reservationLinkedRideMatchesStatus('driver_arrived', reservationId)
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(reservationLifecycleKeys())
+        )
+
+        // driver_arrived → ride_started (mirrors linked ride).
+        // Reservation skips passenger_arriving; stays driver_arrived until start.
+        || (
+          isApprovedDriver()
+          && reservationStatus(resource.data) == 'driver_arrived'
+          && reservationStatus(request.resource.data) == 'ride_started'
+          && reservationAssignedDriverUnchanged()
+          && reservationCustomerUnchanged()
+          && reservationLinkedRideMatchesStatus('ride_started', reservationId)
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(reservationLifecycleKeys())
+        )
+
+        // ride_started → completed (mirrors linked ride).
+        || (
+          isApprovedDriver()
+          && reservationStatus(resource.data) == 'ride_started'
+          && reservationStatus(request.resource.data) == 'completed'
+          && reservationAssignedDriverUnchanged()
+          && reservationCustomerUnchanged()
+          && reservationLinkedRideMatchesStatus('completed', reservationId)
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(reservationLifecycleKeys())
+        )
+
+        // Assigned driver cancels an active reservation lifecycle
+        // (never from completed).
+        || (
+          isApprovedDriver()
+          && isActiveReservationLifecycle(reservationStatus(resource.data))
+          && reservationStatus(resource.data) != 'completed'
+          && reservationStatus(request.resource.data) == 'cancelled'
+          && reservationAssignedDriverUnchanged()
+          && reservationCustomerUnchanged()
+          && request.resource.data.get('rideId', resource.data.get('rideId', ''))
+               == resource.data.get('rideId', '')
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(reservationLifecycleKeys())
+        )
+
+        // Approved driver declines a pending reservation.
+        || (
+          isApprovedDriver()
+          && isPendingReservation(resource.data)
+          && hasNoAssignedDriver(resource.data)
+          && reservationStatus(request.resource.data) == 'cancelled'
+          && reservationCustomerUnchanged()
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(['status', 'updatedAt'])
+        )
+      );
+
+      allow delete: if isReservationOwner(resource.data);
+    }
+
+
+    // ============================================================
+    // LEGACY RIDE REQUESTS
+    // Keep temporarily if Driver App still listens to this.
+    // ============================================================
+
+    match /rideRequests/{rideId} {
+
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn();
+
+      allow update: if isSignedIn();
+
+      allow delete: if false;
+    }
+
+  }
+}

@@ -83,41 +83,11 @@ class RideRequestPreviewSheet extends GetView<RideRequestPreviewController> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    SafeArea(
-                      bottom: false,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              onPressed: () => Get.back(),
-                              icon: const Icon(
-                                Icons.close_rounded,
-                                color: AppColors.white,
-                              ),
-                            ),
-                            Expanded(
-                              child: Text(
-                                'Ride request',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.inter(
-                                  color: AppColors.white,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 48),
-                          ],
-                        ),
-                      ),
-                    ),
                     Obx(() {
                       if (!Get.isRegistered<LocationPermissionController>()) {
                         return const SizedBox.shrink();
                       }
-                      final location =
-                          Get.find<LocationPermissionController>();
+                      final location = Get.find<LocationPermissionController>();
                       if (location.canUseLocation.value) {
                         return const SizedBox.shrink();
                       }
@@ -190,10 +160,7 @@ class RideRequestPreviewSheet extends GetView<RideRequestPreviewController> {
 }
 
 class _PreviewDetailPanel extends StatelessWidget {
-  const _PreviewDetailPanel({
-    required this.ride,
-    required this.bottomInset,
-  });
+  const _PreviewDetailPanel({required this.ride, required this.bottomInset});
 
   final RideModel ride;
   final double bottomInset;
@@ -205,8 +172,9 @@ class _PreviewDetailPanel extends StatelessWidget {
     final name = ride.customerName.isEmpty ? 'Customer' : ride.customerName;
     final distance = ride.formattedDistance;
     final fare = ride.formattedFare.isEmpty ? 'Cash' : ride.formattedFare;
-    final acceptLabel =
-        ride.formattedFare.isEmpty ? 'Accept' : 'Accept for $fare';
+    final acceptLabel = ride.formattedFare.isEmpty
+        ? 'Accept'
+        : 'Accept for $fare';
 
     return Container(
       width: double.infinity,
@@ -357,8 +325,9 @@ class _PreviewDetailPanel extends StatelessWidget {
                       : () => dashboard.acceptRide(preview.ride),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primaryGreen,
-                    disabledBackgroundColor:
-                        AppColors.primaryGreen.withValues(alpha: 0.45),
+                    disabledBackgroundColor: AppColors.primaryGreen.withValues(
+                      alpha: 0.45,
+                    ),
                     foregroundColor: AppColors.black,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -412,10 +381,7 @@ class _PreviewDetailPanel extends StatelessWidget {
 }
 
 class _AddressRow extends StatelessWidget {
-  const _AddressRow({
-    required this.asset,
-    required this.text,
-  });
+  const _AddressRow({required this.asset, required this.text});
 
   final String asset;
   final String text;
@@ -425,12 +391,7 @@ class _AddressRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Image.asset(
-          asset,
-          width: 26,
-          height: 26,
-          fit: BoxFit.contain,
-        ),
+        Image.asset(asset, width: 26, height: 26, fit: BoxFit.contain),
         const SizedBox(width: 8),
         Expanded(
           child: Text(

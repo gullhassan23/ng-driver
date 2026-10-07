@@ -1,5 +1,8 @@
 import 'dart:math' as math;
 
+/// Maximum straight-line distance (miles) a driver can be from pickup to view and accept a ride.
+const double rideRequestRadiusMiles = 1.0;
+
 /// Straight-line miles between two WGS84 points.
 double milesBetween(
   double lat1,

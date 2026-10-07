@@ -6,7 +6,7 @@ import 'package:ngtowncardriver/controllers/dashboard_controller.dart';
 import 'package:ngtowncardriver/routes/app_routes.dart';
 import 'package:ngtowncardriver/utilis/app_colors.dart';
 import 'package:ngtowncardriver/utilis/app_text_styles.dart';
-import 'package:ngtowncardriver/widgets/app_blur_dialog.dart';
+
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -27,45 +27,7 @@ class SettingsView extends StatelessWidget {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  void _showLogoutDialog(BuildContext context) {
-    showAppBlurDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          backgroundColor: AppColors.inputBackground,
-          title: Text(
-            'Logout',
-            style: AppTextStyles.whiteMedium(dialogContext),
-          ),
-          content: Text(
-            'Are you sure you want to logout?',
-            style: AppTextStyles.whiteSmall(dialogContext),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(
-                'Cancel',
-                style: AppTextStyles.whiteSmall(dialogContext),
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                Get.find<AuthController>().signOut();
-              },
-              child: Text(
-                'Logout',
-                style: AppTextStyles.whiteSmall(
-                  dialogContext,
-                ).copyWith(color: AppColors.primaryRed),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
+ 
 
   @override
   Widget build(BuildContext context) {
@@ -322,40 +284,6 @@ class SettingsView extends StatelessWidget {
             const Icon(Icons.chevron_right, color: _mutedGrey, size: 22),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _switchTile({
-    required BuildContext context,
-    required IconData icon,
-    required String title,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: [
-          Icon(icon, color: AppColors.white, size: 22),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              title,
-              style: AppTextStyles.whiteSmall(
-                context,
-              ).copyWith(fontWeight: FontWeight.w500, fontSize: 15),
-            ),
-          ),
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: AppColors.primaryGreen,
-            activeTrackColor: AppColors.primaryGreen.withValues(alpha: 0.45),
-            inactiveThumbColor: AppColors.white,
-            inactiveTrackColor: const Color(0xFF555555),
-          ),
-        ],
       ),
     );
   }
