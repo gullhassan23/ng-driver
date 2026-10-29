@@ -5,31 +5,56 @@ import 'package:get/get.dart';
 import '../models/driver_model.dart';
 import '../routes/app_routes.dart';
 import '../services/firestore_service.dart';
+import '../services/notification_service.dart';
 import '../widgets/app_snackbar_widget.dart';
 import 'auth_controller.dart';
 
 class WaitingApprovalController extends GetxController {
-  WaitingApprovalController({FirestoreService? firestore})
-      : _firestore = firestore ?? FirestoreService();
+  WaitingApprovalController({
+    FirestoreService? firestore,
+    NotificationService? notifications,
+  }) : _firestore = firestore ?? FirestoreService(),
+       _notifications = notifications ?? NotificationService();
 
   final FirestoreService _firestore;
+  final NotificationService _notifications;
 
   final isLoading = true.obs;
   final errorMessage = RxnString(null);
 
   StreamSubscription<DriverModel?>? _driverSubscription;
+  StreamSubscription<String>? _tokenSubscription;
   bool _isNavigating = false;
 
   @override
   void onInit() {
     super.onInit();
+    unawaited(_registerFcmToken());
     listenForApproval();
   }
 
   @override
   void onClose() {
     _driverSubscription?.cancel();
+    _tokenSubscription?.cancel();
     super.onClose();
+  }
+
+  /// Token must exist before approval so `driver_approved` push can arrive.
+  Future<void> _registerFcmToken() async {
+    final uid = Get.find<AuthController>().uid;
+    if (uid == null) return;
+
+    final granted = await _notifications.requestPermission();
+    if (!granted) return;
+
+    final token = await _notifications.deviceToken();
+    if (token != null) {
+      await _firestore.saveFcmToken(uid, token);
+    }
+    _tokenSubscription = _notifications.tokenRefreshes.listen((value) {
+      _firestore.saveFcmToken(uid, value);
+    });
   }
 
   void listenForApproval() {

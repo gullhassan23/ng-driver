@@ -9,6 +9,7 @@ import type {
 
 import {
   COLLECTIONS,
+  CancelledBy,
   DriverFields,
   ReservationFields,
   ReservationStatus,
@@ -37,16 +38,23 @@ interface UpdateRideStatusRequest {
   cancellationReason?: string;
 }
 
+interface SyncReservationOptions {
+  cancelledBy?: string;
+  cancellationReason?: string;
+}
+
 /**
  * Mirror linked reservation status inside the same transaction.
  * Never overwrites a completed reservation with cancelled.
  * Does not write passenger_arriving onto reservations.
+ * On cancel, also writes cancelledBy / cancelledAt / optional reason.
  */
 function syncLinkedReservation(
   tx: Transaction,
   reservationRef: DocumentReference | undefined,
   reservationSnap: DocumentSnapshot | undefined,
   newStatus: string,
+  options?: SyncReservationOptions,
 ): void {
   if (!reservationRef || !reservationSnap || !reservationSnap.exists) {
     return;
@@ -65,10 +73,38 @@ function syncLinkedReservation(
     return;
   }
 
-  tx.update(reservationRef, {
+  const update: Record<string, unknown> = {
     [ReservationFields.status]: newStatus,
     [ReservationFields.updatedAt]: FieldValue.serverTimestamp(),
-  });
+  };
+
+  if (newStatus === ReservationStatus.cancelled) {
+    update[ReservationFields.cancelledAt] = FieldValue.serverTimestamp();
+    if (options?.cancelledBy) {
+      update[ReservationFields.cancelledBy] = options.cancelledBy;
+    }
+    if (options?.cancellationReason) {
+      update[ReservationFields.cancellationReason] = options.cancellationReason;
+      update[ReservationFields.cancelReason] = options.cancellationReason;
+    }
+  }
+
+  tx.update(reservationRef, update);
+}
+
+function clearDriverCurrentRide(
+  tx: Transaction,
+  driverId: string,
+): void {
+  const driverRef = getFirestore().collection(COLLECTIONS.drivers).doc(driverId);
+  tx.set(
+    driverRef,
+    {
+      [DriverFields.currentRideId]: FieldValue.delete(),
+      [DriverFields.updatedAt]: FieldValue.serverTimestamp(),
+    },
+    {merge: true},
+  );
 }
 
 /**
@@ -80,11 +116,11 @@ function syncLinkedReservation(
  * - arrivePickup: driver_arriving → driver_arrived (idempotent; preserves passenger_arriving)
  * - start: passenger_arriving → ride_started (idempotent if already trip)
  * - complete: ride_started|inProgress → completed (idempotent)
- * - cancel: pending (rider) or assigned active states (driver)
+ * - cancel: pending (rider), assigned active (driver or rider)
  *
  * When rides.reservationId is set, the linked reservation status is updated
  * in the same transaction for arrivePickup / start / complete / cancel /
- * setArriving.
+ * setArriving. Cancel also writes cancelledBy attribution on the reservation.
  */
 export const updateRideStatus = onCall(async (request) => {
   const uid = requireAuth(request.auth?.uid);
@@ -150,6 +186,16 @@ export const updateRideStatus = onCall(async (request) => {
     }
 
     if (action === "cancel") {
+      // Idempotent: already cancelled.
+      if (status === RideStatus.cancelled) {
+        resultStatus = RideStatus.cancelled;
+        if (driverId) {
+          clearDriverCurrentRide(tx, driverId);
+          clearCurrentRideFor = driverId;
+        }
+        return;
+      }
+
       // Rider cancels a still-pending request.
       if (status === RideStatus.pending) {
         if (!customerId || customerId !== uid) {
@@ -163,7 +209,7 @@ export const updateRideStatus = onCall(async (request) => {
         const cancelPending: Record<string, unknown> = {
           [RideFields.status]: RideStatus.cancelled,
           [RideFields.cancelledAt]: FieldValue.serverTimestamp(),
-          [RideFields.cancelledBy]: "rider",
+          [RideFields.cancelledBy]: CancelledBy.rider,
           [RideFields.updatedAt]: FieldValue.serverTimestamp(),
         };
         if (cancellationReason) {
@@ -183,9 +229,12 @@ export const updateRideStatus = onCall(async (request) => {
         return;
       }
 
-      // Assigned driver cancels an active assigned trip.
+      // Assigned trip: driver or rider may cancel.
       if (status && isActiveAssignedStatus(status)) {
-        if (!driverId || driverId !== uid) {
+        const isDriver = Boolean(driverId && driverId === uid);
+        const isRider = Boolean(customerId && customerId === uid);
+
+        if (!isDriver && !isRider) {
           denial = new HttpsError(
             "permission-denied",
             SafeMessages.notAssigned,
@@ -193,10 +242,11 @@ export const updateRideStatus = onCall(async (request) => {
           return;
         }
 
+        const cancelledBy = isDriver ? CancelledBy.driver : CancelledBy.rider;
         const cancelAssigned: Record<string, unknown> = {
           [RideFields.status]: RideStatus.cancelled,
           [RideFields.cancelledAt]: FieldValue.serverTimestamp(),
-          [RideFields.cancelledBy]: "driver",
+          [RideFields.cancelledBy]: cancelledBy,
           [RideFields.updatedAt]: FieldValue.serverTimestamp(),
         };
         if (cancellationReason) {
@@ -209,20 +259,18 @@ export const updateRideStatus = onCall(async (request) => {
           reservationRef,
           reservationSnap,
           ReservationStatus.cancelled,
+          {
+            cancelledBy,
+            cancellationReason: cancellationReason || undefined,
+          },
         );
 
-        const driverRef = db.collection(COLLECTIONS.drivers).doc(driverId);
-        tx.set(
-          driverRef,
-          {
-            [DriverFields.currentRideId]: FieldValue.delete(),
-            [DriverFields.updatedAt]: FieldValue.serverTimestamp(),
-          },
-          {merge: true},
-        );
+        if (driverId) {
+          clearDriverCurrentRide(tx, driverId);
+          clearCurrentRideFor = driverId;
+        }
 
         resultStatus = RideStatus.cancelled;
-        clearCurrentRideFor = driverId;
         return;
       }
 
@@ -363,6 +411,8 @@ export const updateRideStatus = onCall(async (request) => {
       return;
     }
 
+    // Complete is idempotent and does not touch payment fields. Card
+    // capture/verification belongs in dedicated backend payment functions.
     tx.update(rideRef, {
       [RideFields.status]: RideStatus.completed,
       [RideFields.completedAt]: FieldValue.serverTimestamp(),

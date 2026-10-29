@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
 
-/// Result of a Google Directions API driving route request.
+/// Result of a Google Routes API driving route request.
 class DirectionsRoute {
   const DirectionsRoute({
     required this.points,
@@ -23,7 +23,7 @@ class DirectionsRoute {
   final String durationText;
 }
 
-/// Thrown when Directions cannot produce a usable route.
+/// Thrown when Routes cannot produce a usable route.
 class DirectionsException implements Exception {
   DirectionsException(this.message, {this.status});
 
@@ -41,7 +41,10 @@ class _CachedDirectionsRoute {
   final DateTime cachedAt;
 }
 
-/// Fetches driving routes via the Google Directions API (not a fake polyline).
+/// Fetches driving routes via the Google Routes API (`computeRoutes`).
+///
+/// Requires the **Routes API** enabled on the Cloud project for [AppConfig]
+/// / the injected API key — not the legacy Directions API.
 class DirectionsService {
   DirectionsService({http.Client? client, String? apiKey})
       : _client = client ?? http.Client(),
@@ -49,6 +52,12 @@ class DirectionsService {
 
   final http.Client _client;
   final String? _apiKeyOverride;
+
+  static const String _computeRoutesPath = '/directions/v2:computeRoutes';
+  static const String _fieldMask =
+      'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,'
+      'routes.legs.distanceMeters,routes.legs.duration,'
+      'routes.legs.polyline.encodedPolyline';
 
   /// Short-lived in-memory cache so preview → active ride can reuse geometry.
   static const Duration routeCacheTtl = Duration(seconds: 75);
@@ -131,166 +140,197 @@ class DirectionsService {
     required LatLng destination,
     List<LatLng> waypoints = const [],
   }) async {
-    final query = <String, String>{
-      'origin': '${origin.latitude},${origin.longitude}',
-      'destination': '${destination.latitude},${destination.longitude}',
-      'mode': 'driving',
-      'key': _apiKey,
+    final body = <String, dynamic>{
+      'origin': _waypoint(origin),
+      'destination': _waypoint(destination),
+      'travelMode': 'DRIVE',
+      'routingPreference': 'TRAFFIC_AWARE',
+      'computeAlternativeRoutes': false,
+      'languageCode': 'en-US',
+      'units': 'IMPERIAL',
     };
     if (waypoints.isNotEmpty) {
-      query['waypoints'] = waypoints
-          .map((w) => '${w.latitude},${w.longitude}')
-          .join('|');
+      body['intermediates'] = waypoints.map(_waypoint).toList();
     }
 
-    final uri = Uri.https(
-      'maps.googleapis.com',
-      '/maps/api/directions/json',
-      query,
-    );
+    final uri = Uri.https('routes.googleapis.com', _computeRoutesPath);
 
-    final response = await _client.get(uri).timeout(
-      const Duration(seconds: 15),
-      onTimeout: () {
-        throw DirectionsException(
-          'Route request timed out. Check your connection and try again.',
+    final response = await _client
+        .post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': _apiKey,
+            'X-Goog-FieldMask': _fieldMask,
+          },
+          body: jsonEncode(body),
+        )
+        .timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            throw DirectionsException(
+              'Route request timed out. Check your connection and try again.',
+            );
+          },
         );
-      },
-    );
+
     if (response.statusCode != 200) {
       throw DirectionsException(
-        'Directions request failed (HTTP ${response.statusCode}).',
+        _messageForHttpError(response.statusCode, response.body),
+        status: 'HTTP_${response.statusCode}',
       );
     }
 
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
-    final status = body['status'] as String? ?? 'UNKNOWN';
-
-    if (status != 'OK') {
-      final errorMessage = body['error_message'] as String?;
-      if (kDebugMode) {
-        debugPrint('Directions API status=$status error=$errorMessage');
-      }
-      throw DirectionsException(
-        _messageForStatus(status, errorMessage),
-        status: status,
-      );
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw DirectionsException('Unexpected Routes API response.');
     }
 
-    final routes = body['routes'] as List<dynamic>? ?? const [];
+    final routes = decoded['routes'] as List<dynamic>? ?? const [];
     if (routes.isEmpty) {
       throw DirectionsException(
-        'No routes returned for this trip.',
-        status: status,
+        'No driving route found between these points.',
+        status: 'ZERO_RESULTS',
       );
     }
 
-    final route = routes.first as Map<String, dynamic>;
-    final legs = route['legs'] as List<dynamic>? ?? const [];
+    final route = routes.first;
+    if (route is! Map) {
+      throw DirectionsException('Unexpected Routes API route shape.');
+    }
+    final routeMap = Map<String, dynamic>.from(route);
+    final legs = routeMap['legs'] as List<dynamic>? ?? const [];
 
-    // Prefer dense per-step polylines so multi-stop routes follow roads
-    // near waypoints. Overview is a lossy simplification that draws chords.
+    // Prefer dense per-leg polylines when present; overview is a simplification.
     var points = pointsFromLegs(legs);
     if (points.length < 2) {
-      final overview = route['overview_polyline'] as Map<String, dynamic>?;
-      final encoded = overview?['points'] as String?;
+      final polyline = routeMap['polyline'] as Map<String, dynamic>?;
+      final encoded = polyline?['encodedPolyline'] as String?;
       if (encoded == null || encoded.isEmpty) {
         throw DirectionsException(
           'Route response did not include an encoded polyline.',
-          status: status,
         );
       }
       points = decodePolyline(encoded);
     }
     if (points.length < 2) {
-      throw DirectionsException(
-        'Decoded route polyline is empty.',
-        status: status,
-      );
+      throw DirectionsException('Decoded route polyline is empty.');
     }
 
     var distanceMeters = 0;
     var durationSeconds = 0;
-    var distanceText = '';
-    var durationText = '';
 
     for (final raw in legs) {
       if (raw is! Map) continue;
       final leg = Map<String, dynamic>.from(raw);
-      final distance = leg['distance'] as Map<String, dynamic>?;
-      final duration = leg['duration'] as Map<String, dynamic>?;
-      final meters = (distance?['value'] as num?)?.round() ?? 0;
-      final seconds = (duration?['value'] as num?)?.round() ?? 0;
-      distanceMeters += meters;
-      durationSeconds += seconds;
-      if (legs.length == 1) {
-        distanceText = _formatDistance(distanceMeters);
-        durationText = (duration?['text'] as String?) ?? '';
-      }
+      distanceMeters += (leg['distanceMeters'] as num?)?.round() ?? 0;
+      durationSeconds += parseDurationSeconds(leg['duration']);
     }
-    if (legs.length > 1) {
-      distanceText = _formatDistance(distanceMeters);
-      durationText = _formatDuration(durationSeconds);
+
+    if (distanceMeters <= 0) {
+      distanceMeters = (routeMap['distanceMeters'] as num?)?.round() ?? 0;
+    }
+    if (durationSeconds <= 0) {
+      durationSeconds = parseDurationSeconds(routeMap['duration']);
     }
 
     return DirectionsRoute(
       points: points,
       distanceMeters: distanceMeters,
       durationSeconds: durationSeconds,
-      distanceText: distanceText,
-      durationText: durationText,
+      distanceText: _formatDistance(distanceMeters),
+      durationText: _formatDuration(durationSeconds),
     );
   }
 
-  /// Concatenates decoded `legs[].steps[].polyline.points` in order.
+  static Map<String, dynamic> _waypoint(LatLng point) {
+    return {
+      'location': {
+        'latLng': {
+          'latitude': point.latitude,
+          'longitude': point.longitude,
+        },
+      },
+    };
+  }
+
+  /// Concatenates decoded `legs[].polyline.encodedPolyline` in order.
   ///
-  /// Duplicate consecutive points at step/leg boundaries are dropped.
-  /// Returns an empty list when no usable step polylines are present.
+  /// Duplicate consecutive points at leg boundaries are dropped.
+  /// Returns an empty list when no usable leg polylines are present.
   static List<LatLng> pointsFromLegs(List<dynamic> legs) {
     final points = <LatLng>[];
 
     for (final rawLeg in legs) {
       if (rawLeg is! Map) continue;
       final leg = Map<String, dynamic>.from(rawLeg);
-      final steps = leg['steps'] as List<dynamic>? ?? const [];
+      final polyline = leg['polyline'] as Map<String, dynamic>?;
+      final encoded = polyline?['encodedPolyline'] as String?;
+      if (encoded == null || encoded.isEmpty) continue;
 
-      for (final rawStep in steps) {
-        if (rawStep is! Map) continue;
-        final step = Map<String, dynamic>.from(rawStep);
-        final polyline = step['polyline'] as Map<String, dynamic>?;
-        final encoded = polyline?['points'] as String?;
-        if (encoded == null || encoded.isEmpty) continue;
-
-        final stepPoints = decodePolyline(encoded);
-        for (final point in stepPoints) {
-          if (points.isNotEmpty &&
-              points.last.latitude == point.latitude &&
-              points.last.longitude == point.longitude) {
-            continue;
-          }
-          points.add(point);
+      final legPoints = decodePolyline(encoded);
+      for (final point in legPoints) {
+        if (points.isNotEmpty &&
+            points.last.latitude == point.latitude &&
+            points.last.longitude == point.longitude) {
+          continue;
         }
+        points.add(point);
       }
     }
 
     return points;
   }
 
-  String _messageForStatus(String status, String? errorMessage) {
-    switch (status) {
-      case 'REQUEST_DENIED':
-        return errorMessage ??
-            'Directions API denied this key. Enable Directions API and allow this app.';
-      case 'OVER_QUERY_LIMIT':
-        return 'Directions quota exceeded. Try again later.';
-      case 'ZERO_RESULTS':
-        return 'No driving route found between these points.';
-      case 'INVALID_REQUEST':
-        return errorMessage ?? 'Invalid Directions request.';
-      case 'NOT_FOUND':
-        return 'Origin or destination could not be geocoded.';
+  /// Parses Routes API duration values (`"165s"`, int seconds, or num).
+  static int parseDurationSeconds(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.round();
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.endsWith('s')) {
+        return double.tryParse(trimmed.substring(0, trimmed.length - 1))
+                ?.round() ??
+            0;
+      }
+      return double.tryParse(trimmed)?.round() ?? 0;
+    }
+    return 0;
+  }
+
+  String _messageForHttpError(int statusCode, String body) {
+    String? apiMessage;
+    String? status;
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        final error = decoded['error'];
+        if (error is Map) {
+          apiMessage = error['message'] as String?;
+          status = error['status'] as String?;
+        }
+      }
+    } catch (_) {
+      // Ignore malformed error bodies; use status-based fallback below.
+    }
+
+    if (kDebugMode && (apiMessage != null || status != null)) {
+      debugPrint('Routes API HTTP $statusCode status=$status error=$apiMessage');
+    }
+
+    switch (statusCode) {
+      case 400:
+        return apiMessage ?? 'Invalid route request.';
+      case 403:
+        return apiMessage ??
+            'Routes API denied this key. Enable Routes API and allow this app.';
+      case 404:
+        return apiMessage ?? 'No driving route found between these points.';
+      case 429:
+        return 'Routes quota exceeded. Try again later.';
       default:
-        return errorMessage ?? 'Directions failed ($status).';
+        if (apiMessage != null && apiMessage.isNotEmpty) return apiMessage;
+        return 'Route request failed (HTTP $statusCode).';
     }
   }
 

@@ -9,6 +9,7 @@ import '../models/driver_model.dart';
 import '../models/driver_offer_model.dart';
 import '../models/reservation_model.dart';
 import '../models/ride_model.dart';
+import '../constants/payment_constants.dart';
 import '../models/ride_request_model.dart';
 import '../utilis/driver_ride_snapshot.dart';
 import '../utilis/firestore_paths.dart';
@@ -20,7 +21,8 @@ class FirestoreService {
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
   })  : _db = firestore ?? FirebaseFirestore.instance,
-        _functions = functions ?? FirebaseFunctions.instance;
+        _functions = functions ??
+            FirebaseFunctions.instanceFor(region: 'us-central1');
 
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
@@ -69,6 +71,16 @@ class FirestoreService {
     );
   }
 
+  /// Checks if a document exists in `users/{uid}` collection.
+  Future<bool> isUserAccount(String uid) async {
+    try {
+      final doc = await _db.collection('users').doc(uid).get();
+      return doc.exists;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Merge into `drivers/{uid}`. If the doc is missing, this is a create and
   /// must include `isApproved: false`. Never send `isApproved` on update so
   /// admin approval cannot be flipped from the client.
@@ -83,6 +95,7 @@ class FirestoreService {
 
     if (!existing.exists) {
       payload[DriverFields.uid] = uid;
+      payload[DriverFields.role] = 'driver';
       payload[DriverFields.isApproved] = false;
       payload[DriverFields.isOnline] = payload[DriverFields.isOnline] ?? false;
       payload[DriverFields.createdAt] = FieldValue.serverTimestamp();
@@ -99,6 +112,13 @@ class FirestoreService {
 
   Future<void> saveFcmToken(String uid, String token) {
     return updateDriverFields(uid, {DriverFields.fcmToken: token});
+  }
+
+  /// Removes the device token so signed-out drivers stop receiving FCM.
+  Future<void> clearFcmToken(String uid) {
+    return updateDriverFields(uid, {
+      DriverFields.fcmToken: FieldValue.delete(),
+    });
   }
 
   Future<void> setOnlineStatus(String uid, bool isOnline) {
@@ -506,37 +526,59 @@ class FirestoreService {
     });
   }
 
-  /// Declines a pending reservation (`pending` → `cancelled`).
+  Future<ReservationModel?> fetchReservation(String reservationId) async {
+    final id = reservationId.trim();
+    if (id.isEmpty) return null;
+    final doc = await _reservations.doc(id).get();
+    if (!doc.exists) return null;
+    return ReservationModel.fromDoc(doc);
+  }
+
+  /// Dead path — would cancel a pending offer globally for all drivers.
   ///
-  /// Empty/missing status is treated as pending (matches model + rules).
-  /// Already-cancelled is idempotent. Throws [StateError] otherwise.
+  /// Decline is local-only via [ReservationFeedController.dismissLocally].
+  /// Use [cancelConfirmedReservation] for assigned bookings.
+  @Deprecated(
+    'Pending decline is local-only. Use cancelConfirmedReservation for '
+    'assigned reservations.',
+  )
   Future<void> declineReservation({required String reservationId}) async {
-    final reservationRef = _reservations.doc(reservationId);
+    throw UnsupportedError(
+      'Pending reservation offers cannot be cancelled in Firestore. '
+      'Decline locally, or use cancelConfirmedReservation for assigned bookings.',
+    );
+  }
 
-    await _db.runTransaction((transaction) async {
-      final snap = await transaction.get(reservationRef);
-      if (!snap.exists) {
-        throw StateError('Reservation is no longer available.');
-      }
+  /// Assigned driver cancels a confirmed (or live) reservation via CF.
+  ///
+  /// Uses [driverCancelReservation] (canonical Functions in ng_town_cab).
+  /// Never cancels a pending offer (decline is local-only).
+  /// Does not write payment or customer cancellation-fee fields.
+  /// No client Firestore fallback — fee-bypass cancels are blocked by rules.
+  Future<void> cancelConfirmedReservation({
+    required String reservationId,
+    required String driverId,
+    String? cancellationReason,
+  }) async {
+    final id = reservationId.trim();
+    final uid = driverId.trim();
+    if (id.isEmpty || uid.isEmpty) {
+      throw StateError('Reservation is no longer available.');
+    }
 
-      final data = snap.data() ?? const <String, dynamic>{};
-      final status = _normalizedReservationStatus(
-        data[ReservationFields.status],
+    final callable = _functions.httpsCallable('driverCancelReservation');
+    final payload = <String, dynamic>{'reservationId': id};
+    if (cancellationReason != null && cancellationReason.isNotEmpty) {
+      payload['cancellationReason'] = cancellationReason;
+    }
+    try {
+      await callable.call(payload);
+    } on FirebaseFunctionsException catch (error) {
+      debugPrint(
+        'driverCancelReservation failed: ${error.code} ${error.message}',
       );
-
-      if (ReservationStatus.isCancelled(status)) {
-        return;
-      }
-
-      if (status != ReservationStatus.pending) {
-        throw StateError('Reservation is no longer pending.');
-      }
-
-      transaction.update(reservationRef, {
-        ReservationFields.status: ReservationStatus.cancelled,
-        ReservationFields.updatedAt: FieldValue.serverTimestamp(),
-      });
-    });
+      rethrow;
+    }
   }
 
   /// Confirms a pending reservation (`pending` → `confirm`) and assigns
@@ -749,6 +791,11 @@ class FirestoreService {
         RideFields.customerId: reservation.userId,
         RideFields.customerName: customerName,
         RideFields.estimatedFare: reservation.fare,
+        RideFields.paymentMethod: reservation.isCardPayment
+            ? PaymentMethod.card
+            : PaymentMethod.cash,
+        if (reservation.isCardPayment)
+          RideFields.paymentStatus: PaymentStatus.pending,
         RideFields.totalMiles: reservation.distanceMiles,
         RideFields.vehicleType: reservation.vehicleType,
         RideFields.pickupLocation: reservation.pickupAddress,
@@ -796,6 +843,11 @@ class FirestoreService {
         customerId: reservation.userId,
         customerName: customerName,
         estimatedFare: reservation.fare,
+        paymentMethod: reservation.isCardPayment
+            ? PaymentMethod.card
+            : PaymentMethod.cash,
+        paymentStatus:
+            reservation.isCardPayment ? PaymentStatus.pending : null,
         totalMiles: reservation.distanceMiles,
         vehicleType: reservation.vehicleType,
         pickupLocation: reservation.pickupAddress,
@@ -1108,9 +1160,11 @@ class FirestoreService {
   Future<void> cancelAssignedRide({
     required String rideId,
     required String driverId,
+    String? cancellationReason,
   }) async {
     final rideRef = _rides.doc(rideId);
     final driverRef = _drivers.doc(driverId);
+    final reason = cancellationReason?.trim() ?? '';
 
     await _db.runTransaction((transaction) async {
       final rideSnap = await transaction.get(rideRef);
@@ -1138,6 +1192,8 @@ class FirestoreService {
           reservationRef: reservationRef,
           reservationSnap: reservationSnap,
           newStatus: ReservationStatus.cancelled,
+          cancelledBy: 'driver',
+          cancellationReason: reason.isEmpty ? null : reason,
         );
         return;
       }
@@ -1154,18 +1210,25 @@ class FirestoreService {
         throw StateError('You are not assigned to this ride.');
       }
 
-      transaction.update(rideRef, {
+      final rideFields = <String, dynamic>{
         RideFields.status: RideStatus.cancelled,
         RideFields.cancelledAt: FieldValue.serverTimestamp(),
         RideFields.cancelledBy: 'driver',
         RideFields.updatedAt: FieldValue.serverTimestamp(),
-      });
+      };
+      if (reason.isNotEmpty) {
+        rideFields[RideFields.cancellationReason] = reason;
+        rideFields[RideFields.cancelReason] = reason;
+      }
+      transaction.update(rideRef, rideFields);
 
       _syncLinkedReservationInTxn(
         transaction,
         reservationRef: reservationRef,
         reservationSnap: reservationSnap,
         newStatus: ReservationStatus.cancelled,
+        cancelledBy: 'driver',
+        cancellationReason: reason.isEmpty ? null : reason,
       );
     });
 
@@ -1304,7 +1367,11 @@ class FirestoreService {
 
       if (action == 'cancel') {
         if (driverId == null || driverId.isEmpty) rethrow;
-        await cancelAssignedRide(rideId: rideId, driverId: driverId);
+        await cancelAssignedRide(
+          rideId: rideId,
+          driverId: driverId,
+          cancellationReason: cancellationReason,
+        );
         return;
       }
 
@@ -1425,6 +1492,8 @@ class FirestoreService {
         if (!RideStatus.isTripInProgressStatus(status ?? '')) {
           throw StateError('Invalid status for complete: $status');
         }
+        // Ride completion is not a charge. Never write paymentStatus,
+        // paymentAmount, or gateway transaction IDs from the driver client.
         transaction.update(rideRef, {
           RideFields.status: RideStatus.completed,
           RideFields.completedAt: FieldValue.serverTimestamp(),
@@ -1483,11 +1552,14 @@ class FirestoreService {
   ///
   /// Skips missing docs, already-matching status, and never overwrites
   /// [ReservationStatus.completed] with cancelled.
+  /// On cancel, writes [cancelledBy] / [cancelledAt] when provided.
   void _syncLinkedReservationInTxn(
     Transaction transaction, {
     required DocumentReference<Map<String, dynamic>>? reservationRef,
     required DocumentSnapshot<Map<String, dynamic>>? reservationSnap,
     required String newStatus,
+    String? cancelledBy,
+    String? cancellationReason,
   }) {
     if (reservationRef == null || reservationSnap == null) return;
     if (!reservationSnap.exists) return;
@@ -1501,10 +1573,21 @@ class FirestoreService {
     }
     if (current == newStatus.toLowerCase()) return;
 
-    transaction.update(reservationRef, {
+    final fields = <String, dynamic>{
       ReservationFields.status: newStatus,
       ReservationFields.updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+    if (newStatus == ReservationStatus.cancelled) {
+      fields[ReservationFields.cancelledAt] = FieldValue.serverTimestamp();
+      if (cancelledBy != null && cancelledBy.isNotEmpty) {
+        fields[ReservationFields.cancelledBy] = cancelledBy;
+      }
+      if (cancellationReason != null && cancellationReason.isNotEmpty) {
+        fields[ReservationFields.cancellationReason] = cancellationReason;
+        fields[ReservationFields.cancelReason] = cancellationReason;
+      }
+    }
+    transaction.update(reservationRef, fields);
   }
 
   /// Legacy direct status write — blocked by rules for drivers.

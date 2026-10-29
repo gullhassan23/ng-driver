@@ -1,6 +1,7 @@
 ﻿import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../constants/payment_constants.dart';
 import '../utilis/firestore_paths.dart';
 import 'ride_stop_model.dart';
 
@@ -63,6 +64,15 @@ class RideModel {
   final DateTime? driverLocationUpdatedAt;
   final DateTime? driverArrivedAt;
 
+  /// Rider-selected method (`cash` / `card`). Display-only in the driver app.
+  final String? paymentMethod;
+
+  /// Backend-verified status (`pending` / `paid` / `failed`, …).
+  final String? paymentStatus;
+
+  /// Last four digits when the backend stored a card snapshot. Never a PAN.
+  final String? cardLast4;
+
   const RideModel({
     required this.id,
     this.rideId = '',
@@ -103,6 +113,9 @@ class RideModel {
     this.driverHeading,
     this.driverLocationUpdatedAt,
     this.driverArrivedAt,
+    this.paymentMethod,
+    this.paymentStatus,
+    this.cardLast4,
   });
 
   factory RideModel.fromDoc(
@@ -260,7 +273,11 @@ class RideModel {
       updatedAt: timestamp(RideFields.updatedAt),
       expiresAt: timestamp(RideFields.expiresAt),
       durationMinutes: minutes(RideFields.durationMinutes),
-      cancelReason: text(RideFields.cancellationReason),
+      cancelReason: () {
+        final primary = text(RideFields.cancellationReason);
+        if (primary.isNotEmpty) return primary;
+        return text(RideFields.cancelReason);
+      }(),
       riderArrived: map[RideFields.riderArrived] == true,
       riderArrivedAt: timestamp(RideFields.riderArrivedAt),
       riderRating: tripRating(),
@@ -272,6 +289,18 @@ class RideModel {
       driverLocationUpdatedAt:
           timestamp(RideFields.driverLocationUpdatedAt),
       driverArrivedAt: timestamp(RideFields.driverArrivedAt),
+      paymentMethod: () {
+        final pm = text(RideFields.paymentMethod);
+        return pm.isEmpty ? null : pm;
+      }(),
+      paymentStatus: () {
+        final ps = text(RideFields.paymentStatus);
+        return ps.isEmpty ? null : ps;
+      }(),
+      cardLast4: () {
+        final last4 = text(RideFields.cardLast4);
+        return last4.isEmpty ? null : last4;
+      }(),
     );
   }
 
@@ -316,8 +345,30 @@ class RideModel {
       driverHeading: driverHeading,
       driverLocationUpdatedAt: driverLocationUpdatedAt,
       driverArrivedAt: driverArrivedAt,
+      paymentMethod: paymentMethod,
+      paymentStatus: paymentStatus,
+      cardLast4: cardLast4,
     );
   }
+
+  bool get isCashPayment => PaymentDisplay.isCashMethod(paymentMethod);
+
+  bool get isCardPayment => PaymentDisplay.isCardMethod(paymentMethod);
+
+  bool get isPaymentPaid => PaymentStatus.isPaid(paymentStatus);
+
+  bool get isPaymentFailed => PaymentStatus.isFailed(paymentStatus);
+
+  bool get isPaymentPending =>
+      isCardPayment && !isPaymentPaid && !isPaymentFailed;
+
+  String get paymentMethodDisplay => PaymentDisplay.methodLabel(paymentMethod);
+
+  String get paymentStatusDisplay => PaymentDisplay.statusLabel(
+        paymentMethod,
+        paymentStatus,
+        last4: cardLast4,
+      );
 
   /// Ride was created from a confirmed reservation.
   bool get isFromReservation =>
@@ -414,11 +465,12 @@ class RideModel {
   String get formattedFare =>
       estimatedFare > 0 ? '\$${estimatedFare.round()}' : '';
 
-  /// e.g. `$328 · Cash`
-  String get formattedFarePkr {
-    if (estimatedFare <= 0) return 'Cash';
-    return '\$${estimatedFare.round()} · Cash';
-  }
+  /// e.g. `$328 · Cash` or `$40 · Card · Pending`
+  String get formattedFarePkr => PaymentDisplay.fareWithMethod(
+        fare: estimatedFare,
+        method: paymentMethod,
+        status: paymentStatus,
+      );
 
   /// e.g. `~0.7 mi` or `~448 m` for very short trips.
   String get formattedDistance {

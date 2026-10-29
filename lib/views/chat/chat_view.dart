@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../../controllers/auth_controller.dart';
 import '../../controllers/chat_controller.dart';
 import '../../models/chat_message_model.dart';
+import '../../models/reservation_model.dart';
 import '../../utilis/app_colors.dart';
 import '../../utilis/chat_constants.dart';
 import '../../widgets/chat/chat_app_bar.dart';
@@ -29,13 +30,36 @@ class _ChatViewState extends State<ChatView> {
   void initState() {
     super.initState();
     _controller = Get.find<ChatController>();
-    final arg = Get.arguments;
-    final rideId = arg is String ? arg.trim() : '';
-    _controller.openChat(rideId);
+    _initChatSession();
 
     _messagesWorker = ever<List<ChatMessageModel>>(_controller.messages, (_) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     });
+  }
+
+  void _initChatSession() {
+    final arg = Get.arguments;
+    if (arg is Map) {
+      final isRes = arg['isReservation'] == true ||
+          (arg['reservationId'] as String?)?.trim().isNotEmpty == true;
+      if (isRes) {
+        final reservationId = (arg['reservationId'] as String?)?.trim() ?? '';
+        final reservation = arg['reservation'];
+        final linkedRideId = arg['rideId'] as String?;
+        _controller.openReservationChat(
+          reservationId,
+          initialReservation:
+              reservation is ReservationModel ? reservation : null,
+          linkedRideId: linkedRideId,
+        );
+      } else {
+        final rideId = (arg['rideId'] as String?)?.trim() ?? '';
+        _controller.openRideChat(rideId);
+      }
+    } else if (arg is String) {
+      final id = arg.trim();
+      _controller.openRideChat(id);
+    }
   }
 
   @override
@@ -159,14 +183,17 @@ class _ChatViewState extends State<ChatView> {
           Obx(
             () {
               if (!_controller.canChat.value) {
+                final endedMessage = _controller.isReservation.value
+                    ? ChatConstants.reservationSessionEnded
+                    : ChatConstants.sessionEnded;
                 return Container(
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                   color: AppColors.dashboardBackground,
-                  child: const Text(
-                    ChatConstants.sessionEnded,
+                  child: Text(
+                    endedMessage,
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Color(0xFF9CA3AF),
                       fontSize: 13,
                       fontWeight: FontWeight.w500,

@@ -52,6 +52,81 @@ service cloud.firestore {
       return rideData.get('driverId', null) == request.auth.uid;
     }
 
+    // Clients may never introduce or change gateway-verified payment fields.
+    function fieldUnchangedOrAbsent(key) {
+      return (key in resource.data)
+        ? (key in request.resource.data
+            && request.resource.data[key] == resource.data[key])
+        : !(key in request.resource.data);
+    }
+
+    function isPaidLikeStatus(status) {
+      return status in ['paid', 'completed', 'succeeded'];
+    }
+
+    function paymentGatewayFieldsLocked() {
+      return fieldUnchangedOrAbsent('paymentTransactionId')
+        && fieldUnchangedOrAbsent('transactionId')
+        && fieldUnchangedOrAbsent('paymentAmount')
+        && fieldUnchangedOrAbsent('paidAt')
+        && fieldUnchangedOrAbsent('cardLast4')
+        && fieldUnchangedOrAbsent('cardBrand');
+    }
+
+    // No client (rider or driver) may elevate paymentStatus to paid.
+    function paymentStatusNotClientPaid() {
+      return !('paymentStatus' in request.resource.data)
+        || request.resource.data.paymentStatus
+            == resource.data.get('paymentStatus', '')
+        || !isPaidLikeStatus(request.resource.data.paymentStatus);
+    }
+
+    function driverPaymentFieldsLocked() {
+      return fieldUnchangedOrAbsent('paymentMethod')
+        && fieldUnchangedOrAbsent('paymentStatus')
+        && paymentGatewayFieldsLocked();
+    }
+
+    function fareFieldsLocked() {
+      return fieldUnchangedOrAbsent('estimatedFare')
+        && fieldUnchangedOrAbsent('fare')
+        && fieldUnchangedOrAbsent('finalFare');
+    }
+
+    function assignedDriverUpdateKeepsPaymentAndFare() {
+      return !isAssignedDriver(resource.data)
+        || (driverPaymentFieldsLocked() && fareFieldsLocked());
+    }
+
+    // Driver-created reservation rides may copy method only.
+    // Never stamp paid, amounts, or gateway IDs from the driver client.
+    function driverCreatedRidePaymentSafe() {
+      return (
+          !('paymentStatus' in request.resource.data)
+          || request.resource.data.paymentStatus in [
+            'pending',
+            'processing',
+            'authorized'
+          ]
+        )
+        && !('paymentTransactionId' in request.resource.data)
+        && !('transactionId' in request.resource.data)
+        && !('paymentAmount' in request.resource.data)
+        && !('paidAt' in request.resource.data)
+        && !('cardLast4' in request.resource.data)
+        && !('cardBrand' in request.resource.data)
+        && (
+          !('paymentMethod' in request.resource.data)
+          || request.resource.data.paymentMethod in [
+            'cash',
+            'card',
+            'authorize_net',
+            'authorizenet',
+            'credit_card'
+          ]
+        );
+    }
+
     function isPreArrivingAssigned(status) {
       return status == 'driver_selected' || status == 'accepted';
     }
@@ -142,7 +217,10 @@ service cloud.firestore {
         'driverArrivedAt',
         'startedAt',
         'completedAt',
-        'cancelledAt'
+        'cancelledAt',
+        'cancelledBy',
+        'cancellationReason',
+        'cancelReason'
       ];
     }
 
@@ -260,15 +338,31 @@ service cloud.firestore {
 
     match /users/{userId} {
 
+      // User can only read their own profile.
       allow read: if isOwner(userId);
 
+      // User can create only their own profile as role == 'user'.
+      // An account cannot create a user document if it exists in drivers.
       allow create: if isOwner(userId)
-        && !hasForbiddenKeys();
+        && !hasForbiddenKeys()
+        && request.resource.data.get('role', 'user') == 'user'
+        && !exists(/databases/$(database)/documents/drivers/$(userId));
 
+      // User can update only their own profile and cannot change role or promote to driver.
       allow update: if isOwner(userId)
-        && !hasForbiddenKeys();
+        && !hasForbiddenKeys()
+        && request.resource.data.get('role', 'user') == 'user'
+        && (
+          !('role' in resource.data)
+          || request.resource.data.get('role', 'user') == resource.data.get('role', 'user')
+        );
 
       allow delete: if false;
+
+      // Saved Authorize.Net profile reference for the owner
+      match /paymentProfile/{docId} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
 
@@ -282,10 +376,14 @@ service cloud.firestore {
       // for an available driver during live booking.
       allow read: if isSignedIn();
 
+      // Driver can create only their own driver profile.
+      // New drivers must always start unapproved.
+      // An account cannot create a driver profile if it exists as a user.
       allow create: if isOwner(driverId)
         && !hasForbiddenKeys()
         && driverUidMatches(driverId)
-        && isUnapprovedOnCreate();
+        && isUnapprovedOnCreate()
+        && !exists(/databases/$(database)/documents/users/$(driverId));
 
       // Rider may also set currentRideId when they select this driver
       // on their own live booking.
@@ -401,6 +499,7 @@ service cloud.firestore {
           && reservationCustomerId(
                reservationDoc(request.resource.data.reservationId).data
              ) == request.resource.data.customerId
+          && driverCreatedRidePaymentSafe()
         )
       );
 
@@ -408,7 +507,11 @@ service cloud.firestore {
       // RIDE UPDATES
       // ------------------------------------------------------------
 
-      allow update: if isSignedIn() && (
+      allow update: if isSignedIn()
+        && paymentGatewayFieldsLocked()
+        && paymentStatusNotClientPaid()
+        && assignedDriverUpdateKeepsPaymentAndFare()
+        && (
 
         // Rider cancels own ride (pending search or assigned live ride).
         (
@@ -506,6 +609,30 @@ service cloud.firestore {
               ])
         )
 
+
+        // Rider rates the assigned driver after ride completion
+        || (
+          isRideOwner(resource.data)
+          && isRideOwner(request.resource.data)
+          && rideCustomerId(request.resource.data)
+              == rideCustomerId(resource.data)
+          && request.resource.data.get('driverId', null)
+              == resource.data.get('driverId', null)
+          && (resource.data.status == 'completed' || resource.data.get('status', '').lower() == 'completed')
+          && request.resource.data.status == resource.data.status
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'riderRating',
+                'riderReview',
+                'ratedAt',
+                'updatedAt'
+              ])
+          && request.resource.data.riderRating is number
+          && request.resource.data.riderRating >= 1
+          && request.resource.data.riderRating <= 5
+        )
+
         // Approved driver claims a pending ride
         // (pending -> driver_arriving; legacy accepted / driver_selected kept for old clients).
         // Security boundary: only allow if expiresAt has not yet passed.
@@ -596,6 +723,7 @@ service cloud.firestore {
         )
 
         // ride_started / inProgress -> completed
+        // Payment status stays unchanged; complete is not a charge.
         || (
           (
             resource.data.status == 'ride_started'
@@ -607,6 +735,13 @@ service cloud.firestore {
           && request.resource.data.driverId == resource.data.driverId
           && request.resource.data.customerId == resource.data.customerId
           && isApprovedDriver()
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'status',
+                'completedAt',
+                'updatedAt'
+              ])
         )
 
         // Driver live GPS updates
@@ -873,6 +1008,74 @@ service cloud.firestore {
 
       // User deletes own reservation.
       allow delete: if isReservationOwner(resource.data);
+      // ------------------------------------------------------------
+      // RESERVATION CHAT MESSAGES
+      // Path: reservations/{reservationId}/messages/{messageId}
+      // ------------------------------------------------------------
+
+      match /messages/{messageId} {
+
+        // Reservation owner or assigned driver can read messages.
+        allow read: if isSignedIn()
+          && exists(/databases/$(database)/documents/reservations/$(reservationId))
+          && (
+            isReservationOwner(reservationDoc(reservationId).data)
+            || reservationDoc(reservationId).data.get('driverId', '') == request.auth.uid
+          );
+
+        // Participant can create a message with valid fields.
+        // Aligns with ride chat: lifecycle gate, role-bound senderType,
+        // type/text, server timestamp, approved driver for driver sends.
+        allow create: if isSignedIn()
+          && exists(/databases/$(database)/documents/reservations/$(reservationId))
+          && isActiveReservationLifecycle(
+               reservationStatus(reservationDoc(reservationId).data)
+             )
+          && !hasNoAssignedDriver(reservationDoc(reservationId).data)
+          && request.resource.data.keys().hasOnly([
+            'senderId',
+            'senderType',
+            'message',
+            'createdAt',
+            'read',
+            'type'
+          ])
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.message is string
+          && request.resource.data.message.size() > 0
+          && request.resource.data.message.size() <= 500
+          && request.resource.data.type == 'text'
+          && request.resource.data.read == false
+          && request.resource.data.createdAt == request.time
+          && (
+            (
+              isReservationOwner(reservationDoc(reservationId).data)
+              && request.resource.data.senderType == 'rider'
+            )
+            || (
+              reservationDoc(reservationId).data.get('driverId', '')
+                  == request.auth.uid
+              && isApprovedDriver()
+              && request.resource.data.senderType == 'driver'
+            )
+          );
+
+        // Recipient may mark peer messages as read only.
+        allow update: if isSignedIn()
+          && exists(/databases/$(database)/documents/reservations/$(reservationId))
+          && (
+            isReservationOwner(reservationDoc(reservationId).data)
+            || reservationDoc(reservationId).data.get('driverId', '') == request.auth.uid
+          )
+          && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly(['read'])
+          && resource.data.read == false
+          && request.resource.data.read == true
+          && resource.data.senderId != request.auth.uid;
+
+        allow delete: if false;
+      }
     }
 
 
@@ -926,6 +1129,11 @@ service cloud.firestore {
       );
 
       allow delete: if false;
+    }
+
+    // Admin SDK only — FCM idempotency ledger. Clients must not read/write.
+    match /fcm_dispatches/{dispatchId} {
+      allow read, write: if false;
     }
 
   }

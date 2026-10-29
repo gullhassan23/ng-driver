@@ -905,8 +905,10 @@ class RideDetail extends GetView<RideDetailController> {
                         _StatusBanner(
                           isCanceled: isCanceled,
                           fare: fare,
+                          paymentLabel: ride.paymentStatusDisplay,
                           passenger: passenger,
-                          cancelReason: ride.cancelReason ,
+                          cancelReason: ride.cancelReason,
+                          cancelledBy: ride.cancelledBy,
                           responsive: responsive,
                         ),
                         SizedBox(height: responsive.h(2)),
@@ -930,6 +932,8 @@ class RideDetail extends GetView<RideDetailController> {
                           vehicle: vehicle,
                           passenger: passenger,
                           fare: fare,
+                          paymentMethod: ride.paymentMethodDisplay,
+                          paymentStatus: ride.paymentStatusDisplay,
                           cancelReason: ride.cancelReason,
                           rating: ride.riderRating,
                           review: ride.riderReview,
@@ -989,16 +993,30 @@ class _StatusBanner extends StatelessWidget {
   const _StatusBanner({
     required this.isCanceled,
     required this.fare,
+    required this.paymentLabel,
     required this.passenger,
     required this.cancelReason,
+    this.cancelledBy,
     required this.responsive,
   });
 
   final bool isCanceled;
   final String fare;
+  final String paymentLabel;
   final String passenger;
   final String cancelReason;
+  final String? cancelledBy;
   final ResponsiveRepo responsive;
+
+  String get _cancelSubtitle {
+    if (cancelReason.trim().isNotEmpty) return cancelReason.trim();
+    final by = cancelledBy?.toLowerCase().trim() ?? '';
+    if (by == 'driver') return 'Ride was cancelled by the driver.';
+    if (by == 'rider' || by == 'user') {
+      return 'Ride was cancelled by the passenger.';
+    }
+    return 'This ride was cancelled.';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1043,9 +1061,7 @@ class _StatusBanner extends StatelessWidget {
           ),
           SizedBox(height: responsive.h(0.4)),
           Text(
-            isCanceled
-                ? (cancelReason.trim().isNotEmpty ? cancelReason.trim() : 'Ride was cancelled by the passenger.')
-                : 'You dropped off $passenger',
+            isCanceled ? _cancelSubtitle : 'You dropped off $passenger',
             textAlign: TextAlign.center,
             style: AppTextStyles.small(context).copyWith(
               fontSize: responsive.h(1.45),
@@ -1062,7 +1078,7 @@ class _StatusBanner extends StatelessWidget {
             ),
           ),
           Text(
-            isCanceled ? 'Cancellation fee applied.' : 'Cash',
+            isCanceled ? 'Ride cancelled — no fee charged.' : paymentLabel,
             style: AppTextStyles.small(context).copyWith(
               fontSize: responsive.h(1.35),
               color: AppColors.white.withValues(alpha: 0.55),
@@ -1295,6 +1311,8 @@ class _DetailsCard extends StatelessWidget {
     required this.vehicle,
     required this.passenger,
     required this.fare,
+    required this.paymentMethod,
+    required this.paymentStatus,
     required this.cancelReason,
     required this.rating,
     required this.review,
@@ -1309,6 +1327,8 @@ class _DetailsCard extends StatelessWidget {
   final String vehicle;
   final String passenger;
   final String fare;
+  final String paymentMethod;
+  final String paymentStatus;
   final String cancelReason;
   final int? rating;
   final String review;
@@ -1395,7 +1415,7 @@ class _DetailsCard extends StatelessWidget {
                           child: _DetailRow(
                             icon: Icons.payments_outlined,
                             title: 'Cancellation fee',
-                            value: 'fee applied.',
+                            value: 'None',
                             responsive: responsive,
                             isLast: true,
                           ),
@@ -1469,6 +1489,18 @@ class _DetailsCard extends StatelessWidget {
                     icon: Icons.directions_car_outlined,
                     title: 'Vehicle',
                     value: vehicle,
+                    responsive: responsive,
+                  ),
+                  _DetailRow(
+                    icon: Icons.payments_outlined,
+                    title: 'Payment',
+                    value: paymentMethod,
+                    responsive: responsive,
+                  ),
+                  _DetailRow(
+                    icon: Icons.verified_outlined,
+                    title: 'Payment status',
+                    value: paymentStatus,
                     responsive: responsive,
                     isLast: !isCanceled || cancelReason.trim().isEmpty,
                   ),

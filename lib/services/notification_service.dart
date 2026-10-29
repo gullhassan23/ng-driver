@@ -28,7 +28,7 @@ Future<void> firebaseMessagingBackgroundHandler(
 }
 
 /// Wraps Firebase Cloud Messaging: permissions, the device token, and the
-/// three ways a ride-request notification can arrive.
+/// three ways a notification can arrive.
 ///
 /// [listen] is idempotent process-wide so re-entering the dashboard does not
 /// stack duplicate FCM handlers.
@@ -43,6 +43,9 @@ class NotificationService {
   static bool _initialMessageHandled = false;
   static NotificationService? _active;
 
+  /// When a tap arrives before the dashboard router is wired, it is held here.
+  static RemoteMessage? pendingOpenMessage;
+
   /// Called when a notification arrives while the app is in the foreground.
   ValueChanged<RemoteMessage>? onForegroundMessage;
 
@@ -52,6 +55,13 @@ class NotificationService {
 
   Future<bool> requestPermission() async {
     final settings = await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    // Show banners while the app is foregrounded (iOS).
+    await _messaging.setForegroundNotificationPresentationOptions(
       alert: true,
       badge: true,
       sound: true,
@@ -81,7 +91,12 @@ class NotificationService {
     });
 
     _onOpenedSub ??= FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      _active?.onMessageOpened?.call(message);
+      final handler = _active?.onMessageOpened;
+      if (handler != null) {
+        handler(message);
+      } else {
+        pendingOpenMessage = message;
+      }
     });
 
     // The app may have been launched by tapping a notification.
@@ -89,8 +104,20 @@ class NotificationService {
       _initialMessageHandled = true;
       final initialMessage = await _messaging.getInitialMessage();
       if (initialMessage != null) {
-        _active?.onMessageOpened?.call(initialMessage);
+        final handler = _active?.onMessageOpened;
+        if (handler != null) {
+          handler(initialMessage);
+        } else {
+          pendingOpenMessage = initialMessage;
+        }
       }
+    }
+
+    // Flush a tap that arrived before this instance became active.
+    final pending = pendingOpenMessage;
+    if (pending != null && onMessageOpened != null) {
+      pendingOpenMessage = null;
+      onMessageOpened!(pending);
     }
   }
 
@@ -112,5 +139,6 @@ class NotificationService {
     _onOpenedSub = null;
     _initialMessageHandled = false;
     _active = null;
+    pendingOpenMessage = null;
   }
 }

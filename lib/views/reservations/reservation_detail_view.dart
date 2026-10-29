@@ -45,7 +45,12 @@ class ReservationDetailView extends GetView<ReservationDetailController> {
                         reservation: reservation,
                       ),
                       SizedBox(height: responsive.h(2)),
-                      AppReservationTripCardWidget(reservation: reservation),
+                      AppReservationTripCardWidget(
+                        reservation: reservation,
+                        onChat: controller.openChat,
+                        badgeCount: controller.chatUnreadCount.value,
+                        chatEnabled: controller.canOpenChat,
+                      ),
                       SizedBox(height: responsive.h(2)),
                       AppReservationDetailsCardWidget(
                         reservation: reservation,
@@ -58,13 +63,20 @@ class ReservationDetailView extends GetView<ReservationDetailController> {
             ),
             Obx(() {
               if (controller.canStartRide) {
-                return _buildRideAction(
-                  context,
-                  responsive,
-                  label: AppText.startRide,
-                  icon: Icons.play_arrow_rounded,
-                  onPressed: controller.startRide,
-                  isEnabled: controller.isStartRideEnabled,
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildRideAction(
+                      context,
+                      responsive,
+                      label: AppText.startRide,
+                      icon: Icons.play_arrow_rounded,
+                      onPressed: controller.startRide,
+                      isEnabled: controller.isStartRideEnabled,
+                    ),
+                    if (controller.canCancelReservation)
+                      _buildCancelAction(context, responsive),
+                  ],
                 );
               }
               if (controller.canContinueRide) {
@@ -77,11 +89,70 @@ class ReservationDetailView extends GetView<ReservationDetailController> {
                   isEnabled: true,
                 );
               }
+              if (controller.canCancelReservation) {
+                return _buildCancelAction(context, responsive);
+              }
               return const SizedBox.shrink();
             }),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildCancelAction(
+    BuildContext context,
+    ResponsiveRepo responsive,
+  ) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        responsive.w(4),
+        0,
+        responsive.w(4),
+        responsive.h(1.5),
+      ),
+      child: Obx(() {
+        final busy = controller.isSubmitting.value;
+        return AppButtonWidget(
+          text: 'Cancel reservation',
+          onPressed: busy ? null : controller.cancelReservation,
+          backgroundColor: AppColors.black,
+          disabledBackgroundColor: Colors.grey.shade800,
+          foregroundColor: AppColors.white,
+          borderColor: AppColors.primaryRed,
+          borderWidth: 1.2,
+          borderRadius: responsive.w(3),
+          showTrailingArrow: false,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (busy)
+                SizedBox(
+                  width: responsive.w(5),
+                  height: responsive.w(5),
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.primaryRed,
+                  ),
+                )
+              else
+                Icon(
+                  Icons.cancel_outlined,
+                  color: AppColors.primaryRed,
+                  size: responsive.w(5.5),
+                ),
+              SizedBox(width: responsive.w(2)),
+              Text(
+                'Cancel reservation',
+                style: AppTextStyles.small(context).copyWith(
+                  color: AppColors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
     );
   }
 

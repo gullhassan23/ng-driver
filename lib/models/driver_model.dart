@@ -4,6 +4,7 @@ import '../utilis/firestore_paths.dart';
 
 class DriverModel {
   final String uid;
+  final String role;
 
   final String firstName;
   final String lastName;
@@ -26,6 +27,7 @@ class DriverModel {
 
   const DriverModel({
     required this.uid,
+    this.role = 'driver',
     this.firstName = '',
     this.lastName = '',
     this.email = '',
@@ -55,6 +57,7 @@ class DriverModel {
 
     return DriverModel(
       uid: uid,
+      role: text(DriverFields.role).isEmpty ? 'driver' : text(DriverFields.role),
       firstName: text(DriverFields.firstName),
       lastName: text(DriverFields.lastName),
       email: text(DriverFields.email),
@@ -82,6 +85,7 @@ class DriverModel {
   Map<String, dynamic> toMap() {
     return {
       DriverFields.uid: uid,
+      DriverFields.role: role,
       DriverFields.firstName: firstName,
       DriverFields.lastName: lastName,
       DriverFields.email: email,

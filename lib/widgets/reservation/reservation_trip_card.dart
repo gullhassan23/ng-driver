@@ -1,13 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:ngtowncardriver/constants/payment_constants.dart';
 import 'package:ngtowncardriver/models/reservation_model.dart';
 import 'package:ngtowncardriver/responsiveness/responsive_repo.dart';
 import 'package:ngtowncardriver/utilis/app_colors.dart';
 import 'package:ngtowncardriver/utilis/app_text_styles.dart';
+import 'package:ngtowncardriver/widgets/ride/chat_button.dart';
 
 class AppReservationTripCardWidget extends StatelessWidget {
   final ReservationModel reservation;
+  final VoidCallback? onChat;
+  final int badgeCount;
+  final bool chatEnabled;
 
-  const AppReservationTripCardWidget({super.key, required this.reservation});
+  const AppReservationTripCardWidget({
+    super.key,
+    required this.reservation,
+    this.onChat,
+    this.badgeCount = 0,
+    this.chatEnabled = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +34,11 @@ class AppReservationTripCardWidget extends StatelessWidget {
         : '—';
     final String date = reservation.displayPickupDate;
     final String time = reservation.displayPickupTime;
-    final String fare = reservation.displayFare;
+    final String fare = PaymentDisplay.fareWithMethod(
+      fare: reservation.fare,
+      method: reservation.paymentMethod,
+      status: reservation.paymentStatus,
+    );
 
     return Container(
       width: double.infinity,
@@ -114,9 +129,25 @@ class AppReservationTripCardWidget extends StatelessWidget {
                       ),
                     ],
                   ),
-                  SizedBox(height: responsive.h(2.5)),
-                  Divider(color: AppColors.white.withValues(alpha: 0.10)),
-                  SizedBox(height: responsive.h(2)),
+                  SizedBox(height: responsive.h(1.5)),
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Divider(color: AppColors.white.withValues(alpha: 0.10)),
+                      Opacity(
+                        opacity: chatEnabled ? 1 : 0.45,
+                        child: LimeActionButton(
+                          icon: Icons.chat_bubble_rounded,
+                          badgeCount: badgeCount,
+                          onTap: () {
+                            if (!chatEnabled) return;
+                            onChat?.call();
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: responsive.h(1.5)),
                   Row(
                     children: [
                       Expanded(

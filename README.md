@@ -1,17 +1,21 @@
 # ngtowncardriver
 
-A new Flutter project.
+Flutter driver app for NG Town Car.
+
+## Google Maps / routing setup
+
+Driving routes use the **Routes API** (`computeRoutes`), not the legacy Directions API.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), open the project for your Maps API key.
+2. Enable **[Routes API](https://console.cloud.google.com/apis/library/routes.googleapis.com)** (billing must be active).
+3. If the key is API-restricted, allow **Routes API** plus Maps SDK for Android / iOS.
+4. Put the key in `.env` as `GOOGLE_MAPS_API_KEY` (and optional `GOOGLE_MAPS_API_KEY_ANDROID` / `GOOGLE_MAPS_API_KEY_IOS`).
+
+Do **not** rely on enabling Directions API (Legacy) — new projects often cannot activate it, which caused the straight-line fallback and `LegacyApiNotActivatedMapError`.
 
 ## Getting Started
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter pub get
+flutter run
+```

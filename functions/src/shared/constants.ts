@@ -7,6 +7,57 @@ export const COLLECTIONS = {
   reservations: "reservations",
   rideRequests: "rideRequests",
   driverOffers: "driverOffers",
+  /** Rider profiles (FCM token for passenger notifications). */
+  users: "users",
+  /** Admin-only idempotency ledger for FCM sends. */
+  fcmDispatches: "fcm_dispatches",
+  messages: "messages",
+} as const;
+
+/** Who initiated a cancel — shared by rides and reservations. */
+export const CancelledBy = {
+  driver: "driver",
+  rider: "rider",
+  user: "user",
+} as const;
+
+/** FCM `data.type` values — must match Flutter `NotificationTypes`. */
+export const FcmNotificationType = {
+  newRide: "new_ride",
+  newReservation: "new_reservation",
+  chatMessage: "chat_message",
+  rideCancelled: "ride_cancelled",
+  reservationCancelled: "reservation_cancelled",
+  passengerArriving: "passenger_arriving",
+  driverApproved: "driver_approved",
+  reservationReminder: "reservation_reminder",
+  /** Rider: driver claimed / on the way (pending → driver_arriving). */
+  rideAccepted: "ride_accepted",
+  /** Rider: driver reached pickup. */
+  driverArrived: "driver_arrived",
+  /** Rider: trip finished. */
+  rideCompleted: "ride_completed",
+} as const;
+
+/**
+ * Wall-clock timezone for reservation pickupDate + pickupTime on the server.
+ * Clients parse as device-local; Functions have no device locale, so Eastern
+ * (NG Town Car service area) is the canonical interpretation.
+ */
+export const RESERVATION_WALL_CLOCK_TZ = "America/New_York";
+
+export const ChatMessageFields = {
+  senderId: "senderId",
+  senderType: "senderType",
+  message: "message",
+  createdAt: "createdAt",
+  read: "read",
+  type: "type",
+} as const;
+
+export const ChatSenderType = {
+  rider: "rider",
+  driver: "driver",
 } as const;
 
 export const RideStatus = {
@@ -150,11 +201,24 @@ export const RideFields = {
   driverEta: "driverEta",
   /** Linked reservation when this ride was started from a booking. */
   reservationId: "reservationId",
+  /** Rider-selected method. Written by rider/backend; never marked paid by drivers. */
+  paymentMethod: "paymentMethod",
+  paymentStatus: "paymentStatus",
+  paymentTransactionId: "paymentTransactionId",
+  paymentAmount: "paymentAmount",
+  cardLast4: "cardLast4",
+  paidAt: "paidAt",
+  /** Set after first successful new_ride FCM fan-out (idempotency). */
+  fcmNotifiedAt: "fcmNotifiedAt",
 } as const;
 
 export const ReservationStatus = {
   pending: "pending",
   confirm: "confirm",
+  /** Legacy dual-read aliases. */
+  confirmed: "confirmed",
+  upcoming: "upcoming",
+  accepted: "accepted",
   driverArriving: "driver_arriving",
   driverArrived: "driver_arrived",
   rideStarted: "ride_started",
@@ -162,11 +226,61 @@ export const ReservationStatus = {
   cancelled: "cancelled",
 } as const;
 
+export function normalizeReservationStatus(status: string): string {
+  const value = status.trim().toLowerCase();
+  if (value === "canceled") return ReservationStatus.cancelled;
+  if (
+    value === ReservationStatus.confirmed ||
+    value === ReservationStatus.upcoming ||
+    value === ReservationStatus.accepted
+  ) {
+    return ReservationStatus.confirm;
+  }
+  return value;
+}
+
+export function isConfirmReservationStatus(status: string): boolean {
+  return normalizeReservationStatus(status) === ReservationStatus.confirm;
+}
+
+/** Status values that normalize to confirmed (for Firestore `in` queries). */
+export const RESERVATION_CONFIRM_STATUS_VALUES = [
+  ReservationStatus.confirm,
+  ReservationStatus.confirmed,
+  ReservationStatus.upcoming,
+  ReservationStatus.accepted,
+] as const;
+
+/** Confirmed or live reservation phases (assigned, not terminal). */
+export function isActiveReservationLifecycleStatus(status: string): boolean {
+  const value = normalizeReservationStatus(status);
+  return (
+    value === ReservationStatus.confirm ||
+    value === ReservationStatus.driverArriving ||
+    value === ReservationStatus.driverArrived ||
+    value === ReservationStatus.rideStarted
+  );
+}
+
 export const ReservationFields = {
   status: "status",
   driverId: "driverId",
   rideId: "rideId",
   updatedAt: "updatedAt",
+  pickupDate: "pickupDate",
+  pickupTime: "pickupTime",
+  userId: "userId",
+  customerId: "customerId",
+  uid: "uid",
+  cancelledAt: "cancelledAt",
+  cancelledBy: "cancelledBy",
+  /** Preferred cancel reason key (also dual-read cancelReason). */
+  cancellationReason: "cancellationReason",
+  cancelReason: "cancelReason",
+  /** Set after reservation_reminder FCM (idempotency). */
+  reminderSentAt: "reminderSentAt",
+  /** Set after first successful new_reservation FCM fan-out. */
+  fcmNotifiedAt: "fcmNotifiedAt",
 } as const;
 
 export const DriverFields = {

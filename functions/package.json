@@ -1,13 +1,13 @@
 {
   "name": "ng-town-ride-functions",
-  "description": "Cloud Functions for NG Town Ride (shared ng-town-car-ride project)",
+  "description": "LEGACY — do not deploy. Canonical Cloud Functions live in ng_town_cab/functions (project ng-town-car-ride).",
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
-    "deploy": "firebase deploy --only functions",
+    "deploy": "node -e \"console.error('REFUSED: Deploy Cloud Functions only from ng_town_cab/functions. See ng_town_cab/docs/FUNCTIONS.md'); process.exit(1)\"",
     "logs": "firebase functions:log"
   },
   "engines": {

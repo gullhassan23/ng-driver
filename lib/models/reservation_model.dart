@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../constants/payment_constants.dart';
 import '../utilis/firestore_paths.dart';
 
 /// Document from the shared `reservations` collection.
@@ -36,7 +37,11 @@ class ReservationModel {
   final String? driverId;
   final String? rideId;
   final String? cancelReason;
+  /// Who cancelled: `driver` | `rider` | `user`.
+  final String? cancelledBy;
   final DateTime? createdAt;
+  final String? paymentMethod;
+  final String? paymentStatus;
 
   const ReservationModel({
     required this.id,
@@ -63,8 +68,23 @@ class ReservationModel {
     this.driverId,
     this.rideId,
     this.cancelReason,
+    this.cancelledBy,
     this.createdAt,
+    this.paymentMethod,
+    this.paymentStatus,
   });
+
+  /// Passenger (rider app) cancelled this reservation.
+  bool get wasCancelledByRider {
+    final by = cancelledBy?.toLowerCase();
+    return by == 'rider' || by == 'user';
+  }
+
+  /// Assigned driver cancelled this reservation.
+  bool get wasCancelledByDriver {
+    final by = cancelledBy?.toLowerCase();
+    return by == 'driver';
+  }
 
   String get fullName {
     final first = firstName.trim();
@@ -91,6 +111,12 @@ class ReservationModel {
       return 'This reservation has been completed successfully.';
     }
     if (ReservationStatus.isCancelled(status)) {
+      if (wasCancelledByDriver) {
+        return 'This reservation was cancelled by the driver.';
+      }
+      if (wasCancelledByRider) {
+        return 'This reservation was cancelled by the customer.';
+      }
       return 'This reservation was cancelled.';
     }
     if (lower == ReservationStatus.driverArriving) {
@@ -148,6 +174,22 @@ class ReservationModel {
   bool get isCompleted => ReservationStatus.isCompleted(status);
 
   bool get isCancelled => ReservationStatus.isCancelled(status);
+
+  bool get isCashPayment => PaymentDisplay.isCashMethod(paymentMethod);
+
+  bool get isCardPayment => PaymentDisplay.isCardMethod(paymentMethod);
+
+  bool get isPaymentPaid => PaymentStatus.isPaid(paymentStatus);
+
+  bool get isPaymentPending =>
+      isCardPayment && !isPaymentPaid && !isPaymentFailed;
+
+  bool get isPaymentFailed => PaymentStatus.isFailed(paymentStatus);
+
+  String get paymentMethodDisplay => PaymentDisplay.methodLabel(paymentMethod);
+
+  String get paymentStatusDisplay =>
+      PaymentDisplay.statusLabel(paymentMethod, paymentStatus);
 
   /// Combines [pickupDate] and [pickupTime] into a local [DateTime].
   /// Returns `null` if [pickupDate] is null or [pickupTime] cannot be parsed.
@@ -466,16 +508,28 @@ class ReservationModel {
       cancelReason: () {
         final reason = text([
           ReservationFields.cancelReason,
-          'cancellationReason',
+          ReservationFields.cancellationReason,
           'cancel_reason',
         ]);
         return reason.isEmpty ? null : reason;
+      }(),
+      cancelledBy: () {
+        final by = text([ReservationFields.cancelledBy, 'canceledBy']);
+        return by.isEmpty ? null : by;
       }(),
       createdAt: timestamp([
         ReservationFields.createdAt,
         'created_at',
         'timestamp',
       ]),
+      paymentMethod: () {
+        final pm = text([ReservationFields.paymentMethod, 'payment_method']);
+        return pm.isEmpty ? null : pm;
+      }(),
+      paymentStatus: () {
+        final ps = text([ReservationFields.paymentStatus, 'payment_status']);
+        return ps.isEmpty ? null : ps;
+      }(),
     );
   }
 

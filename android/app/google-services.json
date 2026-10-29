@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:578123178626:android:39450d33c110180c304a9b",
         "android_client_info": {
-          "package_name": "ngtownride.driver"
+          "package_name": "com.example.ngtowncardriver"
         }
       },
       "oauth_client": [],
@@ -29,6 +29,25 @@
         "mobilesdk_app_id": "1:578123178626:android:01487e9b72155dbe304a9b",
         "android_client_info": {
           "package_name": "com.ngtownride.rider"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyACl0SiAUyyn6IHbidq1LgWWuPbsMnvkKA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:578123178626:android:890537c3cb77c7ef304a9b",
+        "android_client_info": {
+          "package_name": "ngtownride.driver"
         }
       },
       "oauth_client": [],

@@ -8,38 +8,30 @@ import 'package:ngtowncardriver/services/directions_service.dart';
 
 void main() {
   group('DirectionsService.pointsFromLegs', () {
-    test('concatenates step polylines and drops boundary duplicates', () {
-      final stepA = encodePolyline(const [
+    test('concatenates leg polylines and drops boundary duplicates', () {
+      final legA = encodePolyline(const [
         LatLng(47.60, -122.33),
         LatLng(47.61, -122.34),
       ]);
-      final stepB = encodePolyline(const [
-        LatLng(47.61, -122.34), // duplicate of previous step end
+      final legB = encodePolyline(const [
+        LatLng(47.61, -122.34), // duplicate of previous leg end
         LatLng(47.62, -122.35),
         LatLng(47.63, -122.36),
       ]);
-      final stepC = encodePolyline(const [
+      final legC = encodePolyline(const [
         LatLng(47.63, -122.36),
         LatLng(47.64, -122.37),
       ]);
 
       final points = DirectionsService.pointsFromLegs([
         {
-          'steps': [
-            {
-              'polyline': {'points': stepA},
-            },
-            {
-              'polyline': {'points': stepB},
-            },
-          ],
+          'polyline': {'encodedPolyline': legA},
         },
         {
-          'steps': [
-            {
-              'polyline': {'points': stepC},
-            },
-          ],
+          'polyline': {'encodedPolyline': legB},
+        },
+        {
+          'polyline': {'encodedPolyline': legC},
         },
       ]);
 
@@ -51,13 +43,11 @@ void main() {
       expect(points.last, const LatLng(47.64, -122.37));
     });
 
-    test('returns empty when steps have no polylines', () {
+    test('returns empty when legs have no polylines', () {
       expect(
         DirectionsService.pointsFromLegs([
           {
-            'steps': [
-              {'distance': {'value': 100}},
-            ],
+            'distanceMeters': 100,
           },
         ]),
         isEmpty,
@@ -66,8 +56,17 @@ void main() {
     });
   });
 
+  group('DirectionsService.parseDurationSeconds', () {
+    test('parses duration strings and numbers', () {
+      expect(DirectionsService.parseDurationSeconds('165s'), 165);
+      expect(DirectionsService.parseDurationSeconds('90.4s'), 90);
+      expect(DirectionsService.parseDurationSeconds(120), 120);
+      expect(DirectionsService.parseDurationSeconds(null), 0);
+    });
+  });
+
   group('DirectionsService.getDrivingRoute', () {
-    test('uses concatenated step geometry instead of sparse overview', () async {
+    test('uses concatenated leg geometry instead of sparse overview', () async {
       final dense = encodePolyline(const [
         LatLng(47.60, -122.33),
         LatLng(47.605, -122.335),
@@ -80,43 +79,59 @@ void main() {
         LatLng(47.60, -122.33),
         LatLng(47.62, -122.35),
       ]);
+      final secondLeg = encodePolyline(const [
+        LatLng(47.62, -122.35),
+        LatLng(47.625, -122.355),
+        LatLng(47.63, -122.36),
+      ]);
 
       final client = MockClient((request) async {
-        expect(request.url.path, '/maps/api/directions/json');
-        expect(request.url.queryParameters['waypoints'], '47.61,-122.34');
-        expect(request.url.queryParameters['origin'], '47.6,-122.33');
-        expect(request.url.queryParameters['destination'], '47.62,-122.35');
+        expect(request.method, 'POST');
+        expect(request.url.host, 'routes.googleapis.com');
+        expect(request.url.path, '/directions/v2:computeRoutes');
+        expect(request.headers['X-Goog-Api-Key'], 'test-key');
+        expect(
+          request.headers['X-Goog-FieldMask'],
+          contains('routes.polyline.encodedPolyline'),
+        );
+
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['travelMode'], 'DRIVE');
+        expect(body['origin'], {
+          'location': {
+            'latLng': {'latitude': 47.60, 'longitude': -122.33},
+          },
+        });
+        expect(body['destination'], {
+          'location': {
+            'latLng': {'latitude': 47.62, 'longitude': -122.35},
+          },
+        });
+        expect(body['intermediates'], [
+          {
+            'location': {
+              'latLng': {'latitude': 47.61, 'longitude': -122.34},
+            },
+          },
+        ]);
 
         return http.Response(
           jsonEncode({
-            'status': 'OK',
             'routes': [
               {
-                'overview_polyline': {'points': sparseOverview},
+                'distanceMeters': 900,
+                'duration': '210s',
+                'polyline': {'encodedPolyline': sparseOverview},
                 'legs': [
                   {
-                    'distance': {'value': 500, 'text': '0.3 mi'},
-                    'duration': {'value': 120, 'text': '2 mins'},
-                    'steps': [
-                      {
-                        'polyline': {'points': dense},
-                      },
-                    ],
+                    'distanceMeters': 500,
+                    'duration': '120s',
+                    'polyline': {'encodedPolyline': dense},
                   },
                   {
-                    'distance': {'value': 400, 'text': '0.2 mi'},
-                    'duration': {'value': 90, 'text': '1 min'},
-                    'steps': [
-                      {
-                        'polyline': {
-                          'points': encodePolyline(const [
-                            LatLng(47.62, -122.35),
-                            LatLng(47.625, -122.355),
-                            LatLng(47.63, -122.36),
-                          ]),
-                        },
-                      },
-                    ],
+                    'distanceMeters': 400,
+                    'duration': '90s',
+                    'polyline': {'encodedPolyline': secondLeg},
                   },
                 ],
               },
@@ -147,7 +162,7 @@ void main() {
       expect(route.durationText, isNotEmpty);
     });
 
-    test('falls back to overview when legs have no step polylines', () async {
+    test('falls back to overview when legs have no polylines', () async {
       final overview = encodePolyline(const [
         LatLng(47.60, -122.33),
         LatLng(47.61, -122.34),
@@ -157,17 +172,15 @@ void main() {
       final client = MockClient((request) async {
         return http.Response(
           jsonEncode({
-            'status': 'OK',
             'routes': [
               {
-                'overview_polyline': {'points': overview},
+                'distanceMeters': 1000,
+                'duration': '300s',
+                'polyline': {'encodedPolyline': overview},
                 'legs': [
                   {
-                    'distance': {'value': 1000, 'text': '0.6 mi'},
-                    'duration': {'value': 300, 'text': '5 mins'},
-                    'steps': [
-                      {'html_instructions': 'Head north'},
-                    ],
+                    'distanceMeters': 1000,
+                    'duration': '300s',
                   },
                 ],
               },
@@ -187,23 +200,25 @@ void main() {
       expect(route.points, hasLength(3));
       expect(route.points[1], const LatLng(47.61, -122.34));
       expect(route.distanceMeters, 1000);
-      expect(route.durationText, '5 mins');
+      expect(route.durationSeconds, 300);
+      expect(route.durationText, '5 min');
     });
 
-    test('passes multiple waypoints in rider order without optimize', () async {
-      Uri? captured;
+    test('passes multiple waypoints as ordered intermediates', () async {
+      Map<String, dynamic>? capturedBody;
       final client = MockClient((request) async {
-        captured = request.url;
+        capturedBody = jsonDecode(request.body) as Map<String, dynamic>;
         final overview = encodePolyline(const [
           LatLng(1, 1),
           LatLng(2, 2),
         ]);
         return http.Response(
           jsonEncode({
-            'status': 'OK',
             'routes': [
               {
-                'overview_polyline': {'points': overview},
+                'distanceMeters': 50,
+                'duration': '30s',
+                'polyline': {'encodedPolyline': overview},
                 'legs': const [],
               },
             ],
@@ -223,12 +238,52 @@ void main() {
         ],
       );
 
-      expect(captured, isNotNull);
+      expect(capturedBody, isNotNull);
+      expect(capturedBody!['intermediates'], [
+        {
+          'location': {
+            'latLng': {'latitude': 47.61, 'longitude': -122.34},
+          },
+        },
+        {
+          'location': {
+            'latLng': {'latitude': 47.62, 'longitude': -122.35},
+          },
+        },
+      ]);
+      expect(capturedBody!.containsKey('optimizeWaypointOrder'), isFalse);
+    });
+
+    test('maps HTTP errors to DirectionsException', () async {
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'error': {
+              'code': 403,
+              'message':
+                  'You’re calling a legacy API, which is not enabled for your project.',
+              'status': 'PERMISSION_DENIED',
+            },
+          }),
+          403,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final service = DirectionsService(client: client, apiKey: 'test-key');
       expect(
-        captured!.queryParameters['waypoints'],
-        '47.61,-122.34|47.62,-122.35',
+        () => service.getDrivingRoute(
+          origin: const LatLng(47.60, -122.33),
+          destination: const LatLng(47.61, -122.34),
+        ),
+        throwsA(
+          isA<DirectionsException>().having(
+            (e) => e.message,
+            'message',
+            contains('legacy API'),
+          ),
+        ),
       );
-      expect(captured!.queryParameters['waypoints'], isNot(contains('optimize')));
     });
 
     test('reuses short-lived cache for identical geometry', () async {
@@ -241,19 +296,16 @@ void main() {
         hits++;
         return http.Response(
           jsonEncode({
-            'status': 'OK',
             'routes': [
               {
-                'overview_polyline': {'points': dense},
+                'distanceMeters': 100,
+                'duration': '60s',
+                'polyline': {'encodedPolyline': dense},
                 'legs': [
                   {
-                    'distance': {'value': 100, 'text': '0.1 mi'},
-                    'duration': {'value': 60, 'text': '1 min'},
-                    'steps': [
-                      {
-                        'polyline': {'points': dense},
-                      },
-                    ],
+                    'distanceMeters': 100,
+                    'duration': '60s',
+                    'polyline': {'encodedPolyline': dense},
                   },
                 ],
               },

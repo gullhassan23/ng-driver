@@ -2,14 +2,17 @@ import 'dart:async';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../constants/notification_constants.dart';
 import '../models/driver_model.dart';
 import '../models/ride_model.dart';
 import '../models/ride_request_model.dart';
+import '../routes/app_navigator.dart';
 import '../routes/app_routes.dart';
 import '../services/firestore_service.dart';
 import '../services/location_service.dart';
@@ -18,8 +21,12 @@ import '../services/notification_service.dart';
 import '../services/ride_alert_service.dart';
 import '../utilis/firestore_paths.dart';
 import '../utilis/geo.dart';
+import '../views/reservations/new_reservation_request_view.dart';
+import '../views/reservations/reservation_detail_view.dart';
 import '../widgets/app_snackbar_widget.dart';
+import 'active_ride_controller.dart';
 import 'auth_controller.dart';
+import 'chat_controller.dart';
 import 'ride_history_feed_controller.dart';
 
 /// Exclusive driver presence: ride XOR reservation (never both).
@@ -409,32 +416,339 @@ class DashboardController extends GetxController {
       });
     }
 
-    _notifications.onForegroundMessage = (message) {
-      if (Get.isRegistered<AuthController>() &&
-          Get.find<AuthController>().notificationsPaused.value) {
-        return;
-      }
-      AppSnackbar.success(
-        title: message.notification?.title ?? 'New ride request',
-        message: message.notification?.body ?? 'A rider is waiting nearby.',
-        position: SnackPosition.TOP,
-        duration: const Duration(seconds: 5),
-      );
-    };
-
+    _notifications.onForegroundMessage = _onForegroundNotification;
     _notifications.onMessageOpened = (message) {
-      final rideId = message.data[_rideIdKey] as String?;
-
-      if (rideId != null) {
-        openRideById(rideId);
-      }
+      unawaited(_handleNotificationOpen(message));
     };
 
     await _notifications.listen();
   }
 
-  /// Key the user app (or a Cloud Function) puts in the notification payload.
-  static const String _rideIdKey = 'rideId';
+  String _notificationType(RemoteMessage message) {
+    final raw = message.data[NotificationDataKeys.type];
+    if (raw is String && raw.trim().isNotEmpty) {
+      return raw.trim();
+    }
+    // Legacy new_ride payloads only carried rideId.
+    final rideId = message.data[NotificationDataKeys.rideId];
+    if (rideId is String && rideId.trim().isNotEmpty) {
+      return NotificationTypes.newRide;
+    }
+    return '';
+  }
+
+  void _onForegroundNotification(RemoteMessage message) {
+    if (Get.isRegistered<AuthController>() &&
+        Get.find<AuthController>().notificationsPaused.value) {
+      return;
+    }
+
+    final type = _notificationType(message);
+    if (type == NotificationTypes.chatMessage) {
+      final isReservation =
+          message.data[NotificationDataKeys.isReservation] == 'true';
+      final sessionId =
+          (message.data[NotificationDataKeys.sessionId] as String?)?.trim() ??
+          (isReservation
+              ? (message.data[NotificationDataKeys.reservationId] as String?)
+                    ?.trim()
+              : (message.data[NotificationDataKeys.rideId] as String?)
+                    ?.trim()) ??
+          '';
+      if (ChatController.isViewingSession(
+        sessionId: sessionId,
+        isReservationSession: isReservation,
+      )) {
+        return;
+      }
+    }
+
+    final title =
+        message.notification?.title ?? _defaultTitleForType(type);
+    final data = message.data;
+    String body;
+    if (type == NotificationTypes.rideCancelled) {
+      body = _cancelBodyFromData(data, isReservation: false);
+    } else if (type == NotificationTypes.reservationCancelled) {
+      body = _cancelBodyFromData(data, isReservation: true);
+    } else {
+      body = message.notification?.body ?? _defaultBodyForType(type);
+    }
+
+    final isError =
+        type == NotificationTypes.rideCancelled ||
+        type == NotificationTypes.reservationCancelled;
+
+    if (isError) {
+      AppSnackbar.error(
+        title: title,
+        message: body,
+        position: SnackPosition.TOP,
+        duration: const Duration(seconds: 5),
+      );
+    } else {
+      AppSnackbar.success(
+        title: title,
+        message: body,
+        position: SnackPosition.TOP,
+        duration: const Duration(seconds: 5),
+      );
+    }
+  }
+
+  String _defaultTitleForType(String type) {
+    switch (type) {
+      case NotificationTypes.newReservation:
+        return 'New reservation request';
+      case NotificationTypes.chatMessage:
+        return 'New message';
+      case NotificationTypes.rideCancelled:
+        return 'Ride cancelled';
+      case NotificationTypes.reservationCancelled:
+        return 'Reservation cancelled';
+      case NotificationTypes.passengerArriving:
+        return 'Passenger is coming';
+      case NotificationTypes.driverApproved:
+        return 'Account approved';
+      case NotificationTypes.reservationReminder:
+        return 'Upcoming reservation';
+      case NotificationTypes.newRide:
+      default:
+        return 'New ride request';
+    }
+  }
+
+  String _defaultBodyForType(String type) {
+    switch (type) {
+      case NotificationTypes.newReservation:
+        return 'A rider booked a reservation. Open to review.';
+      case NotificationTypes.chatMessage:
+        return 'You have a new message from your rider.';
+      case NotificationTypes.rideCancelled:
+        return 'This ride was cancelled.';
+      case NotificationTypes.reservationCancelled:
+        return 'This reservation was cancelled.';
+      case NotificationTypes.passengerArriving:
+        return 'The rider is on the way to the pickup.';
+      case NotificationTypes.driverApproved:
+        return 'Your driver account is approved.';
+      case NotificationTypes.reservationReminder:
+        return 'You have a confirmed reservation within the next hour.';
+      case NotificationTypes.newRide:
+      default:
+        return 'A rider is waiting nearby.';
+    }
+  }
+
+  /// Prefer FCM `cancelledBy` so driver-initiated cancels are not blamed on the rider.
+  String _cancelBodyFromData(
+    Map<String, dynamic> data, {
+    required bool isReservation,
+  }) {
+    final by =
+        (data[NotificationDataKeys.cancelledBy] as String?)
+            ?.trim()
+            .toLowerCase() ??
+        '';
+    if (by == 'driver') {
+      return isReservation
+          ? 'You cancelled this reservation.'
+          : 'You cancelled this ride.';
+    }
+    if (by == 'rider' || by == 'user') {
+      return isReservation
+          ? 'A rider cancelled your reservation.'
+          : 'The rider cancelled this ride.';
+    }
+    return isReservation
+        ? 'This reservation was cancelled.'
+        : 'This ride was cancelled.';
+  }
+
+  Future<void> _handleNotificationOpen(RemoteMessage message) async {
+    final type = _notificationType(message);
+    final data = message.data;
+
+    try {
+      switch (type) {
+        case NotificationTypes.newRide:
+          final rideId =
+              (data[NotificationDataKeys.rideId] as String?)?.trim() ?? '';
+          if (rideId.isNotEmpty) await openRideById(rideId);
+          break;
+        case NotificationTypes.newReservation:
+          await _openReservationFromNotification(
+            (data[NotificationDataKeys.reservationId] as String?)?.trim() ?? '',
+            preferPendingRequest: true,
+          );
+          break;
+        case NotificationTypes.reservationReminder:
+          await _openReservationFromNotification(
+            (data[NotificationDataKeys.reservationId] as String?)?.trim() ?? '',
+            preferPendingRequest: false,
+          );
+          break;
+        case NotificationTypes.chatMessage:
+          await _openChatFromNotification(data);
+          break;
+        case NotificationTypes.rideCancelled:
+          selectNav(homeNavIndex);
+          _leaveActiveRideAfterRemoteCancel();
+          AppSnackbar.info(
+            title: 'Ride cancelled',
+            message: _cancelBodyFromData(data, isReservation: false),
+          );
+          break;
+        case NotificationTypes.reservationCancelled:
+          selectNav(reservationNavIndex);
+          _leaveActiveRideAfterRemoteCancel();
+          AppSnackbar.info(
+            title: 'Reservation cancelled',
+            message: _cancelBodyFromData(data, isReservation: true),
+          );
+          break;
+        case NotificationTypes.passengerArriving:
+          final rideId =
+              (data[NotificationDataKeys.rideId] as String?)?.trim() ?? '';
+          if (rideId.isNotEmpty) {
+            final ride = await _firestore.fetchRide(rideId);
+            if (ride != null &&
+                RideStatus.isActiveAssignedStatus(ride.status)) {
+              await _openActiveRide(ride);
+            }
+          }
+          break;
+        case NotificationTypes.driverApproved:
+          if (Get.currentRoute != AppRoutes.dashboard) {
+            Get.offAllNamed(AppRoutes.dashboard);
+          }
+          break;
+        default:
+          final rideId =
+              (data[NotificationDataKeys.rideId] as String?)?.trim() ?? '';
+          if (rideId.isNotEmpty) await openRideById(rideId);
+      }
+    } catch (error, stack) {
+      debugPrint('Notification open failed: $error\n$stack');
+      AppSnackbar.error(
+        title: 'Could not open',
+        message: 'This notification is no longer available.',
+      );
+    }
+  }
+
+  /// Closes Active Ride / in-ride Chat if still open after a remote cancel.
+  /// Snackbar is left to the caller so messages are not duplicated.
+  void _leaveActiveRideAfterRemoteCancel() {
+    if (Get.isRegistered<ActiveRideController>()) {
+      Get.find<ActiveRideController>().forceExitOnRemoteCancel(message: '');
+      return;
+    }
+    if (AppNavigator.isOnActiveRideStack()) {
+      AppNavigator.leaveActiveRideToDashboard(navIndex: homeNavIndex);
+    }
+  }
+
+  Future<void> _openReservationFromNotification(
+    String reservationId, {
+    required bool preferPendingRequest,
+  }) async {
+    final id = reservationId.trim();
+    if (id.isEmpty) return;
+
+    final reservation = await _firestore.fetchReservation(id);
+    if (reservation == null) {
+      AppSnackbar.error(
+        title: 'Reservation unavailable',
+        message: 'This reservation could not be found.',
+      );
+      return;
+    }
+
+    if (ReservationStatus.isCancelled(reservation.status)) {
+      AppSnackbar.info(
+        title: 'Reservation cancelled',
+        message: 'This reservation is no longer active.',
+      );
+      selectNav(homeNavIndex);
+      return;
+    }
+
+    if (preferPendingRequest &&
+        reservation.status.toLowerCase() == ReservationStatus.pending) {
+      openNewReservationRequest(reservation);
+      return;
+    }
+
+    if (ReservationStatus.isConfirm(reservation.status) ||
+        ReservationStatus.isLiveActive(reservation.status) ||
+        ReservationStatus.isCompleted(reservation.status)) {
+      openReservationDetail(reservation);
+      return;
+    }
+
+    if (reservation.status.toLowerCase() == ReservationStatus.pending) {
+      openNewReservationRequest(reservation);
+      return;
+    }
+
+    AppSnackbar.info(
+      title: 'Reservation',
+      message: 'This reservation is no longer available to open.',
+    );
+  }
+
+  Future<void> _openChatFromNotification(Map<String, dynamic> data) async {
+    final isReservation = data[NotificationDataKeys.isReservation] == 'true';
+    final sessionId =
+        (data[NotificationDataKeys.sessionId] as String?)?.trim() ??
+        (isReservation
+            ? (data[NotificationDataKeys.reservationId] as String?)?.trim()
+            : (data[NotificationDataKeys.rideId] as String?)?.trim()) ??
+        '';
+    if (sessionId.isEmpty) return;
+
+    if (isReservation) {
+      final reservation = await _firestore.fetchReservation(sessionId);
+      if (reservation == null) {
+        AppSnackbar.error(
+          title: 'Chat unavailable',
+          message: 'This reservation chat is no longer available.',
+        );
+        return;
+      }
+      if (!ReservationStatus.isConfirmedOrActive(reservation.status)) {
+        AppSnackbar.info(
+          title: 'Chat unavailable',
+          message: 'This reservation session has ended.',
+        );
+        return;
+      }
+      AppNavigator.toReservationChat(
+        reservationId: sessionId,
+        reservation: reservation,
+        rideId: reservation.rideId,
+      );
+      return;
+    }
+
+    final ride = await _firestore.fetchRide(sessionId);
+    if (ride == null) {
+      AppSnackbar.error(
+        title: 'Chat unavailable',
+        message: 'This ride chat is no longer available.',
+      );
+      return;
+    }
+    if (!RideStatus.isActiveAssignedStatus(ride.status)) {
+      AppSnackbar.info(
+        title: 'Chat unavailable',
+        message: 'This ride session has ended.',
+      );
+      return;
+    }
+    AppNavigator.toChat(sessionId);
+  }
 
   void _startPendingRideListeners() {
     _startDriverLocationListener();

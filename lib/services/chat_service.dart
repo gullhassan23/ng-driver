@@ -11,20 +11,26 @@ class ChatService {
 
   final FirebaseFirestore _firestore;
 
-  CollectionReference<Map<String, dynamic>> _messages(String rideId) =>
-      _firestore
-          .collection(FirestorePaths.rides)
-          .doc(rideId)
-          .collection(FirestorePaths.messages);
+  CollectionReference<Map<String, dynamic>> _messages(
+    String id, {
+    bool isReservation = false,
+  }) {
+    final collection =
+        isReservation ? FirestorePaths.reservations : FirestorePaths.rides;
+    return _firestore.collection(collection).doc(id).collection(FirestorePaths.messages);
+  }
 
-  /// Real-time messages for a ride, oldest first.
-  Stream<List<ChatMessageModel>> watchMessages(String rideId) {
-    final id = rideId.trim();
-    if (id.isEmpty) {
+  /// Real-time messages for a ride or reservation, oldest first.
+  Stream<List<ChatMessageModel>> watchMessages(
+    String id, {
+    bool isReservation = false,
+  }) {
+    final trimmedId = id.trim();
+    if (trimmedId.isEmpty) {
       return Stream.value(const <ChatMessageModel>[]);
     }
 
-    return _messages(id)
+    return _messages(trimmedId, isReservation: isReservation)
         .orderBy(ChatMessageFields.createdAt, descending: false)
         .snapshots()
         .map((snapshot) {
@@ -44,14 +50,17 @@ class ChatService {
         });
   }
 
-  /// Unread messages from the rider (for Active Ride badge).
-  Stream<int> watchUnreadFromRiderCount(String rideId) {
-    final id = rideId.trim();
-    if (id.isEmpty) {
+  /// Unread messages from the rider (for Active Ride or Reservation badge).
+  Stream<int> watchUnreadFromRiderCount(
+    String id, {
+    bool isReservation = false,
+  }) {
+    final trimmedId = id.trim();
+    if (trimmedId.isEmpty) {
       return Stream.value(0);
     }
 
-    return _messages(id)
+    return _messages(trimmedId, isReservation: isReservation)
         .where(
           ChatMessageFields.senderType,
           isEqualTo: ChatMessageModel.senderTypeRider,
@@ -67,16 +76,23 @@ class ChatService {
         });
   }
 
+  /// Sends a driver text message under [sessionId]
+  /// (`rides/{id}` or `reservations/{id}` when [isReservation] is true).
   Future<void> sendDriverMessage({
-    required String rideId,
+    required String sessionId,
     required String senderId,
     required String message,
+    bool isReservation = false,
   }) async {
-    final id = rideId.trim();
+    final id = sessionId.trim();
     final uid = senderId.trim();
     final text = message.trim();
     if (id.isEmpty) {
-      throw ChatServiceException(ChatConstants.rideNotFound);
+      throw ChatServiceException(
+        isReservation
+            ? ChatConstants.reservationNotFound
+            : ChatConstants.rideNotFound,
+      );
     }
     if (uid.isEmpty) {
       throw ChatServiceException(ChatConstants.sendFailed);
@@ -89,7 +105,7 @@ class ChatService {
     }
 
     try {
-      await _messages(id).add(
+      await _messages(id, isReservation: isReservation).add(
         ChatMessageModel.toCreateMap(
           senderId: uid,
           senderType: ChatMessageModel.senderTypeDriver,
@@ -103,11 +119,12 @@ class ChatService {
 
   /// Batch-mark rider messages as read. No-op if [messageIds] is empty.
   Future<void> markMessagesRead(
-    String rideId,
-    Iterable<String> messageIds,
-  ) async {
-    final id = rideId.trim();
-    if (id.isEmpty) return;
+    String id,
+    Iterable<String> messageIds, {
+    bool isReservation = false,
+  }) async {
+    final trimmedId = id.trim();
+    if (trimmedId.isEmpty) return;
 
     final ids = messageIds
         .map((e) => e.trim())
@@ -123,7 +140,7 @@ class ChatService {
         final batch = _firestore.batch();
         for (final messageId in chunk) {
           batch.update(
-            _messages(id).doc(messageId),
+            _messages(trimmedId, isReservation: isReservation).doc(messageId),
             {ChatMessageFields.read: true},
           );
         }

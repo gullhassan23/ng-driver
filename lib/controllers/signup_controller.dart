@@ -105,6 +105,7 @@ class SignupController extends GetxController {
 
       final driverFields = <String, dynamic>{
         DriverFields.uid: uid,
+        DriverFields.role: 'driver',
         DriverFields.cnic: info.cnic,
         DriverFields.licenseNumber: info.licenseNumber,
         DriverFields.vehicleType: info.vehicleType,

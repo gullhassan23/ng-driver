@@ -111,14 +111,16 @@ class NewReservationRequestController extends GetxController {
     submittingAction.value = ReservationSubmitAction.decline;
     try {
       // Local dismiss only — do not cancel the booking for other drivers.
+      // Declining an offer is not a cancellation and has no penalty.
       if (!Get.isRegistered<ReservationFeedController>()) {
         Get.put(ReservationFeedController());
       }
       Get.find<ReservationFeedController>().dismissLocally(reservation.id);
 
       AppSnackbar.info(
-        title: 'Reservation declined',
-        message: 'This reservation was hidden from your list.',
+        title: 'Offer declined',
+        message:
+            'This offer was hidden from your list. The booking stays open for other drivers.',
       );
 
       Get.back();

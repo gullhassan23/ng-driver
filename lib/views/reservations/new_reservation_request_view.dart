@@ -138,88 +138,46 @@ class NewReservationRequestView
         final accepting = action == ReservationSubmitAction.accept;
         final declining = action == ReservationSubmitAction.decline;
         final busy = accepting || declining;
-        const declineColor = Color(0xFFFF3B4A);
 
-        return Row(
-          children: [
-            // Expanded(
-            //   child: AppButtonWidget(
-            //     text: 'Decline',
-            //     onPressed: busy ? null : controller.decline,
-            //     backgroundColor: AppColors.black,
-            //     disabledBackgroundColor: Colors.grey.shade800,
-            //     foregroundColor: AppColors.white,
-            //     borderColor: declineColor,
-            //     borderWidth: 1.2,
-            //     borderRadius: responsive.w(3),
-            //     showTrailingArrow: false,
-            //     child: declining
-            //         ? _buildButtonLoader(
-            //             context,
-            //             responsive,
-            //             label: 'Declining…',
-            //             color: declineColor,
-            //           )
-            //         : Row(
-            //             mainAxisAlignment: MainAxisAlignment.center,
-            //             children: [
-            //               Icon(
-            //                 Icons.close,
-            //                 color: declineColor,
-            //                 size: responsive.w(5),
-            //               ),
-            //               SizedBox(width: responsive.w(2)),
-            //               Text(
-            //                 'Decline',
-            //                 style: AppTextStyles.small(context).copyWith(
-            //                   color: AppColors.white,
-            //                   fontWeight: FontWeight.w600,
-            //                 ),
-            //               ),
-            //             ],
-            //           ),
-            //   ),
-            // ),
-            SizedBox(width: responsive.w(3)),
-            Expanded(
-              child: AppButtonWidget(
-                text: 'Accept',
-                onPressed: busy ? null : controller.accept,
-                backgroundColor: AppColors.dashboardAccent,
-                disabledBackgroundColor: AppColors.dashboardAccent.withValues(
-                  alpha: 0.55,
-                ),
-                foregroundColor: AppColors.black,
-                borderRadius: responsive.w(3),
-                showTrailingArrow: false,
-                child: accepting
-                    ? _buildButtonLoader(
-                        context,
-                        responsive,
-                        label: 'Accepting…',
-                        color: AppColors.black,
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.check,
-                            color: AppColors.black,
-                            size: responsive.w(5),
-                          ),
-                          SizedBox(width: responsive.w(2)),
-                          Text(
-                            'Accept',
-                            style: AppTextStyles.small(context).copyWith(
-                              color: AppColors.black,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
+        final declineColor = AppColors.primaryRed;
+
+        return Expanded(
+          child: AppButtonWidget(
+            text: 'Accept',
+            onPressed: busy ? null : controller.accept,
+            backgroundColor: AppColors.dashboardAccent,
+            disabledBackgroundColor: AppColors.dashboardAccent.withValues(
+              alpha: 0.55,
             ),
-          ],
+            foregroundColor: AppColors.black,
+            borderRadius: responsive.w(3),
+            showTrailingArrow: false,
+            child: accepting
+                ? _buildButtonLoader(
+                    context,
+                    responsive,
+                    label: 'Accepting…',
+                    color: AppColors.black,
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.check,
+                        color: AppColors.black,
+                        size: responsive.w(5),
+                      ),
+                      SizedBox(width: responsive.w(2)),
+                      Text(
+                        'Accept',
+                        style: AppTextStyles.small(context).copyWith(
+                          color: AppColors.black,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
         );
       }),
     );

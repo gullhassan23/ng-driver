@@ -14,9 +14,14 @@ class ChatConstants {
   static const String inputHint = 'Type a message…';
   static const String sessionEnded =
       'This ride has ended. Chat is no longer available.';
+  static const String reservationSessionEnded =
+      'This reservation has ended. Chat is no longer available.';
   static const String rideNotFound = 'Ride not found.';
+  static const String reservationNotFound = 'Reservation not found.';
   static const String chatUnavailable =
       'Chat is only available during an active ride.';
+  static const String reservationChatUnavailable =
+      'Chat is only available for your assigned confirmed reservations.';
   static const String emptyMessage = 'Please enter a message.';
   static const String messageTooLong =
       'Message is too long (max $maxMessageLength characters).';
@@ -28,4 +33,6 @@ class ChatConstants {
       'Check your internet connection and try again.';
   static const String permissionDenied =
       'You do not have permission to access this chat.';
+  static const String unreadWatchFailed =
+      'Unable to load unread chat messages. Please try again.';
 }

@@ -128,7 +128,7 @@ class RidesHistory extends GetView<RidesHistoryController> {
                           .toList(),
                       date: when == null ? '—' : _formatDate(when),
                       time: when == null ? '' : _formatTime(when),
-                      fare: ride.formattedFare,
+                      fare: ride.formattedFarePkr,
                       distance: ride.formattedDistance,
                       duration: ride.formattedDuration,
                       status: isCancelled ? 'Cancelled' : 'Completed',

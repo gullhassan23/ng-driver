@@ -12,7 +12,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/reservation_model.dart';
 import '../models/ride_model.dart';
 import '../models/ride_stop_model.dart';
-import '../routes/app_routes.dart';
 import '../services/chat_service.dart';
 import '../services/directions_service.dart';
 import '../services/firestore_service.dart';
@@ -27,6 +26,7 @@ import '../utilis/firestore_paths.dart';
 import '../utilis/map_route_polyline.dart';
 import '../widgets/app_blur_dialog.dart';
 import '../widgets/app_snackbar_widget.dart';
+import '../widgets/ride/cancel_reason_dialog.dart';
 import 'auth_controller.dart';
 import 'dashboard_controller.dart';
 
@@ -386,7 +386,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
       _startEtaTicker(initial);
       _watchRide(initial.id);
       _watchLinkedReservation(initial);
-      _startChatUnreadWatch(initial.id);
+      _startChatUnreadWatchForRide(initial);
 
       // Mount the map now — do not wait for GPS or Directions.
       isLoading.value = false;
@@ -433,9 +433,8 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
         .watchRide(rideId)
         .listen(
           (updated) {
-            if (_exiting) return;
-
             if (updated == null) {
+              if (_exiting && !AppNavigator.isOnActiveRideStack()) return;
               unawaited(
                 _clearAndExit(message: 'This ride is no longer available.'),
               );
@@ -445,6 +444,8 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
             // Terminal status first — before any await — so cancel always exits.
             // Also schedule exit outside this callback to avoid deadlocking on
             // subscription.cancel() inside the same listen handler.
+            // If a prior exit latched _exiting but left Active Ride on screen
+            // (e.g. Get.back only popped Chat), still force leave.
             if (_isTerminalRideStatus(updated.status)) {
               ride.value = updated;
               if (updated.status.toLowerCase().trim() == RideStatus.completed) {
@@ -456,6 +457,8 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
               }
               return;
             }
+
+            if (_exiting) return;
 
             unawaited(_onRideSnapshot(updated));
           },
@@ -499,30 +502,34 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
   }
 
   /// Cancels the linked ride (idempotent) then leaves Active Ride.
+  ///
+  /// Does not latch [_exiting] before UI exit — awaiting the CF cancel with
+  /// `_exiting = true` used to swallow the ride `cancelled` snapshot and leave
+  /// the driver stuck on "Heading to dropoff".
   Future<void> _exitBecauseReservationCancelled() async {
-    if (_exiting) return;
-    _exiting = true;
+    if (_exiting && !AppNavigator.isOnActiveRideStack()) return;
+    if (isClosed) return;
 
     final current = ride.value;
     final uid = Get.find<AuthController>().uid;
     if (current != null &&
         uid != null &&
         !_isTerminalRideStatus(current.status)) {
-      try {
-        await _firestore.updateRideLifecycle(
-          rideId: current.id,
-          action: 'cancel',
-          driverId: uid,
-        );
-      } catch (error) {
-        if (kDebugMode) {
-          debugPrint('cancel linked ride after reservation cancel: $error');
+      unawaited(() async {
+        try {
+          await _firestore.updateRideLifecycle(
+            rideId: current.id,
+            action: 'cancel',
+            driverId: uid,
+          );
+        } catch (error) {
+          if (kDebugMode) {
+            debugPrint('cancel linked ride after reservation cancel: $error');
+          }
         }
-      }
+      }());
     }
-    // Reset so _clearAndExit can run its full cleanup path once.
-    _exiting = false;
-    if (isClosed) return;
+
     await _clearAndExit(message: 'Your reservation has been cancelled by user');
   }
 
@@ -564,6 +571,20 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
         previous.status != RideStatus.passengerArriving &&
         updated.status == RideStatus.passengerArriving) {
       AppSnackbar.info(title: 'Passenger is coming');
+    }
+
+    if (previous != null &&
+        updated.isTripInProgress &&
+        (previous.dropoffLatLng != updated.dropoffLatLng ||
+            previous.dropoffLocation != updated.dropoffLocation ||
+            !_sameStops(previous.stops, updated.stops))) {
+      final stopsEdited = !_sameStops(previous.stops, updated.stops);
+      AppSnackbar.info(
+        title: stopsEdited ? 'Trip updated' : 'Destination updated',
+        message: stopsEdited
+            ? 'The rider changed stops or the dropoff.'
+            : 'The rider changed the dropoff.',
+      );
     }
 
     final arrivedAtPickup =
@@ -624,7 +645,31 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
     final stopProgressChanged =
         previous != null &&
         previous.currentStopIndex != updated.currentStopIndex;
-    if (phaseChanged || (stopProgressChanged && updated.isTripInProgress)) {
+    // Rider may change dropoff/stops mid-trip without a status change — markers
+    // already rebuild above; force Directions so the polyline/ETA follow too.
+    final tripRouteTargetChanged =
+        previous != null &&
+        updated.isTripInProgress &&
+        previous.currentTripTargetLatLng != updated.currentTripTargetLatLng;
+    final itineraryStopsChanged =
+        previous != null &&
+        updated.isTripInProgress &&
+        !_sameStops(previous.stops, updated.stops);
+    final dropoffChangedMidTrip =
+        previous != null &&
+        updated.isTripInProgress &&
+        (previous.dropoffLatLng != updated.dropoffLatLng ||
+            previous.dropoffLocation != updated.dropoffLocation);
+    final pickupRouteTargetChanged =
+        previous != null &&
+        !updated.isTripInProgress &&
+        previous.pickupLatLng != updated.pickupLatLng;
+    if (phaseChanged ||
+        (stopProgressChanged && updated.isTripInProgress) ||
+        tripRouteTargetChanged ||
+        itineraryStopsChanged ||
+        dropoffChangedMidTrip ||
+        pickupRouteTargetChanged) {
       _lastRouteKey = null;
       if (arrivedAtPickup && phaseChanged) {
         // Freeze follow-camera and skip route/camera work while waiting
@@ -1990,16 +2035,22 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
       return;
     }
 
+    final reason = await CancelReasonDialog.show(
+      title: 'Why do you want to cancel the ride?',
+    );
+    if (reason == null || reason.trim().isEmpty || isClosed) return;
+
+    final phaseCopy = _cancelConfirmCopy(current);
     final confirmed = await showAppBlurGetDialog<bool>(
       AlertDialog(
         backgroundColor: AppColors.inputBackground,
-        title: const Text(
-          'Cancel ride?',
-          style: TextStyle(color: AppColors.white),
+        title: Text(
+          phaseCopy.title,
+          style: const TextStyle(color: AppColors.white),
         ),
-        content: const Text(
-          'The passenger will be notified and this trip will end.',
-          style: TextStyle(color: AppColors.white),
+        content: Text(
+          phaseCopy.body,
+          style: const TextStyle(color: AppColors.white),
         ),
         actions: [
           TextButton(
@@ -2026,6 +2077,7 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
         rideId: current.id,
         action: 'cancel',
         driverId: Get.find<AuthController>().uid,
+        cancellationReason: reason.trim(),
       );
       if (isClosed || _exiting) return;
       await _clearAndExit(message: 'Ride cancelled.');
@@ -2107,7 +2159,9 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
     );
   }
 
-  /// Opens in-ride chat for the current assigned active ride only.
+  /// Opens chat for the current assigned active ride.
+  /// Reservation-linked rides use `reservations/{reservationId}/messages`
+  /// so pre-ride and in-ride messages stay on one thread.
   void openChat() {
     final current = ride.value;
     final rideId = current?.id.trim() ?? '';
@@ -2133,23 +2187,55 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
       return;
     }
 
-    // Get.toNamed(AppRoutes.chat, arguments: rideId);
+    final reservationId = current.reservationId?.trim() ?? '';
+    if (reservationId.isNotEmpty) {
+      AppNavigator.toReservationChat(
+        reservationId: reservationId,
+        rideId: rideId,
+      );
+      return;
+    }
+
     AppNavigator.toChat(rideId);
   }
 
-  void _startChatUnreadWatch(String rideId) {
+  void _startChatUnreadWatchForRide(RideModel ride) {
+    final reservationId = ride.reservationId?.trim() ?? '';
+    if (reservationId.isNotEmpty) {
+      _startChatUnreadWatch(reservationId, isReservation: true);
+      return;
+    }
+    _startChatUnreadWatch(ride.id, isReservation: false);
+  }
+
+  bool _chatUnreadErrorShown = false;
+
+  void _startChatUnreadWatch(
+    String sessionId, {
+    bool isReservation = false,
+  }) {
     _stopChatUnreadWatch();
-    final id = rideId.trim();
+    final id = sessionId.trim();
     if (id.isEmpty) return;
 
+    _chatUnreadErrorShown = false;
     _chatUnreadSubscription = _chatService
-        .watchUnreadFromRiderCount(id)
+        .watchUnreadFromRiderCount(id, isReservation: isReservation)
         .listen(
-          (count) {
-            chatUnreadCount.value = count < 0 ? 0 : count;
+          (unread) {
+            chatUnreadCount.value = unread < 0 ? 0 : unread;
           },
-          onError: (_) {
+          onError: (Object error) {
             chatUnreadCount.value = 0;
+            if (_chatUnreadErrorShown) return;
+            _chatUnreadErrorShown = true;
+            final message = error is ChatServiceException
+                ? error.message
+                : ChatConstants.unreadWatchFailed;
+            AppSnackbar.error(
+              title: ChatConstants.loadFailedTitle,
+              message: message,
+            );
           },
         );
   }
@@ -2181,6 +2267,32 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       AppSnackbar.error(title: 'Navigation', message: 'Could not open maps.');
     }
+  }
+
+  /// Phase-aware cancel confirmation copy (no fees — none approved yet).
+  ({String title, String body}) _cancelConfirmCopy(RideModel current) {
+    if (RideStatus.isTripInProgressStatus(current.status)) {
+      return (
+        title: 'Cancel trip in progress?',
+        body:
+            'The passenger will be notified and this trip will end immediately. '
+            'This is a driver cancellation — the customer is not charged a cancellation fee.',
+      );
+    }
+    if (current.isWaitingAtPickup) {
+      return (
+        title: 'Cancel after arrival?',
+        body:
+            'You are at the pickup. Cancelling will notify the passenger and end this trip. '
+            'This is not a customer no-show. The customer is not charged a cancellation fee.',
+      );
+    }
+    return (
+      title: 'Cancel ride?',
+      body:
+          'The passenger will be notified and navigation for this trip will stop. '
+          'This is a driver cancellation — the customer is not charged a cancellation fee.',
+    );
   }
 
   /// Message shown when Firestore reports the ride ended remotely.
@@ -2217,61 +2329,61 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
     return _clearAndExit(completedRide: ride);
   }
 
+  /// FCM / external backup when the driver is still on Active Ride after cancel.
+  /// Pass an empty [message] when the caller shows its own snackbar.
+  void forceExitOnRemoteCancel({String? message}) {
+    if (isClosed) return;
+    unawaited(_clearAndExit(message: message));
+  }
+
   Future<void> _clearAndExit({
     String? message,
     RideModel? completedRide,
     bool success = false,
   }) async {
-    if (_exiting) return;
+    final stillOnActiveRide = AppNavigator.isOnActiveRideStack();
+    // Allow re-entry when a prior exit latched _exiting but left Active Ride
+    // (or Chat) on screen after a partial Get.back().
+    if (_exiting && !stillOnActiveRide && completedRide == null) return;
+
+    final alreadyExiting = _exiting;
     _exiting = true;
 
-    _etaTimer?.cancel();
-    _routeDebounce?.cancel();
-    _locationWriteRetry?.cancel();
-    _proximityPollTimer?.cancel();
+    if (!alreadyExiting) {
+      _etaTimer?.cancel();
+      _routeDebounce?.cancel();
+      _locationWriteRetry?.cancel();
+      _proximityPollTimer?.cancel();
 
-    // Never await cancel while still inside the watchRide listen callback —
-    // that deadlocks and leaves the driver stuck on the map.
-    final rideSub = _rideSubscription;
-    _rideSubscription = null;
-    unawaited(rideSub?.cancel() ?? Future<void>.value());
+      // Never await cancel while still inside the watchRide listen callback —
+      // that deadlocks and leaves the driver stuck on the map.
+      final rideSub = _rideSubscription;
+      _rideSubscription = null;
+      unawaited(rideSub?.cancel() ?? Future<void>.value());
 
-    final reservationSub = _reservationSubscription;
-    _reservationSubscription = null;
-    unawaited(reservationSub?.cancel() ?? Future<void>.value());
+      final reservationSub = _reservationSubscription;
+      _reservationSubscription = null;
+      unawaited(reservationSub?.cancel() ?? Future<void>.value());
 
-    _stopChatUnreadWatch();
+      _stopChatUnreadWatch();
 
-    unawaited(_stopLocationTracking());
+      unawaited(_stopLocationTracking());
+    }
 
     // Leave Active Ride immediately. Never await Firestore here — a hung
     // clearCurrentRideId used to set _exiting=true and leave the driver
     // stuck on the map forever (later cancel snapshots were ignored).
     if (completedRide != null) {
-      // Get.offAllNamed(
-      //   AppRoutes.completedRideDetail,
-      //   arguments: {
-      //     'ride': completedRide,
-      //     'returnToDashboard': true,
-      //   },
-      // );
       AppNavigator.toCompletedRideDetail(
         ride: completedRide,
         returnToDashboard: true,
       );
     } else {
-      // Prefer popping back to the shell when Active Ride was pushed with
-      // toNamed; fall back to offAll when opened as a root (cold start).
-      if (Get.key.currentState?.canPop() == true) {
-        Get.back();
-      } else {
-        Get.offAllNamed(
-          AppRoutes.dashboard,
-          arguments: {'navIndex': DashboardController.homeNavIndex},
-        );
-      }
+      AppNavigator.leaveActiveRideToDashboard(
+        navIndex: DashboardController.homeNavIndex,
+      );
 
-      if (message != null && message.isNotEmpty) {
+      if (!alreadyExiting && message != null && message.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (success) {
             AppSnackbar.success(
@@ -2287,6 +2399,8 @@ class ActiveRideController extends GetxController with WidgetsBindingObserver {
         });
       }
     }
+
+    if (alreadyExiting) return;
 
     final uid = Get.find<AuthController>().uid;
     if (uid != null) {

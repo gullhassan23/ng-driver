@@ -90,6 +90,8 @@ class RideFields {
   /// Driver who declined/cancelled a pending ride (history attribution).
   static const String cancelledByDriverId = 'cancelledByDriverId';
   static const String cancellationReason = 'cancellationReason';
+  /// Dual-written with [cancellationReason] for rider/driver model parity.
+  static const String cancelReason = 'cancelReason';
 
   /// Live driver GPS on the same ride document (written by the driver app).
   /// Shape: `{ latitude: number, longitude: number, heading?: number }`.
@@ -115,6 +117,16 @@ class RideFields {
 
   /// Set when a ride is created from an accepted reservation.
   static const String reservationId = 'reservationId';
+
+  // --- Payment Fields (Authorize.Net / Cash) ---
+  static const String paymentMethod = 'paymentMethod';
+  static const String paymentStatus = 'paymentStatus';
+  static const String paymentTransactionId = 'paymentTransactionId';
+  static const String transactionId = 'transactionId';
+  static const String paymentAmount = 'paymentAmount';
+  static const String cardLast4 = 'cardLast4';
+  static const String cardBrand = 'cardBrand';
+  static const String paidAt = 'paidAt';
 }
 
 /// Field names on `rides/{rideId}/driverOffers/{driverId}` documents.
@@ -159,6 +171,7 @@ class DriverOfferStatus {
 /// Field names on a `drivers` document.
 class DriverFields {
   static const String uid = 'uid';
+  static const String role = 'role';
   static const String firstName = 'firstName';
   static const String lastName = 'lastName';
   static const String email = 'email';
@@ -200,7 +213,10 @@ class DriverInformationFields {
 /// Field names on a `reservations` document.
 class ReservationFields {
   static const String cancelReason = 'cancelReason';
+  static const String cancellationReason = 'cancellationReason';
   static const String cancelledAt = 'cancelledAt';
+  /// Who cancelled: `driver` | `rider` | `user`.
+  static const String cancelledBy = 'cancelledBy';
   static const String createdAt = 'createdAt';
   static const String distanceMiles = 'distanceMiles';
   static const String dropoffAddress = 'dropoffAddress';
@@ -226,6 +242,10 @@ class ReservationFields {
   static const String status = 'status';
   static const String updatedAt = 'updatedAt';
   static const String userId = 'userId';
+  static const String paymentMethod = 'paymentMethod';
+  static const String paymentStatus = 'paymentStatus';
+  static const String paymentTransactionId = 'paymentTransactionId';
+  static const String paymentAmount = 'paymentAmount';
   static const String vehicleName = 'vehicleName';
   static const String vehicleNumber = 'vehicleNumber';
   static const String vehicleType = 'vehicleType';

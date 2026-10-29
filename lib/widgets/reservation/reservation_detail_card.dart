@@ -142,6 +142,18 @@ class AppReservationDetailsCardWidget extends StatelessWidget {
                               value: vehicleType,
                               responsive: responsive,
                             ),
+                            _DetailItem(
+                              icon: Icons.payments_outlined,
+                              title: 'Payment',
+                              value: reservation.paymentMethodDisplay,
+                              responsive: responsive,
+                            ),
+                            _DetailItem(
+                              icon: Icons.verified_outlined,
+                              title: 'Payment status',
+                              value: reservation.paymentStatusDisplay,
+                              responsive: responsive,
+                            ),
                           ],
                         ),
                       ),

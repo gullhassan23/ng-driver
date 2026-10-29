@@ -15,6 +15,14 @@ import '../widgets/phone_text_field_widget.dart';
 import 'location_permission_controller.dart';
 import 'signup_controller.dart';
 
+class UserAccountRejectedException implements Exception {
+  final String message;
+  const UserAccountRejectedException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class AuthController extends GetxController {
   AuthController({FirebaseAuth? auth, FirestoreService? firestore})
     : _auth = auth ?? FirebaseAuth.instance,
@@ -196,6 +204,8 @@ class AuthController extends GetxController {
       await _auth.signInWithEmailAndPassword(email: email, password: password);
 
       await _routeAfterSignIn();
+    } on UserAccountRejectedException catch (error) {
+      _showError(error.message, title: 'Access denied');
     } on FirebaseAuthException catch (error) {
       _showError(
         AuthMessages.fromFirebase(error.code, AuthFlow.login),
@@ -291,6 +301,7 @@ class AuthController extends GetxController {
       try {
         await _firestore.updateDriverFields(uid, {
           DriverFields.uid: uid,
+          DriverFields.role: 'driver',
           DriverFields.firstName: first,
           DriverFields.lastName: last,
           DriverFields.email: email,
@@ -412,6 +423,11 @@ class AuthController extends GetxController {
         await _firestore.setOnlineStatus(id, false);
       } catch (_) {
         // Presence is best effort; always complete sign-out.
+      }
+      try {
+        await _firestore.clearFcmToken(id);
+      } catch (_) {
+        // Token clear is best effort; always complete sign-out.
       }
     }
 
@@ -543,20 +559,27 @@ class AuthController extends GetxController {
   }
 
   /// Skips Sign In for a returning driver on cold start.
-  /// Incomplete / missing profiles are treated as logged out on cold start.
+  /// Incomplete / missing profiles or user accounts are treated as logged out on cold start.
   Future<String> resolveStartRoute() async {
-    final route = await resolvePostAuthRoute(signInOnError: true);
+    try {
+      final route = await resolvePostAuthRoute(signInOnError: true);
 
-    if (route == AppRoutes.driverRegistration) {
-      await signOut(navigate: false);
+      if (route == AppRoutes.driverRegistration) {
+        await signOut(navigate: false);
+        return AppRoutes.signIn;
+      }
+
+      return route;
+    } on UserAccountRejectedException catch (error) {
+      _showError(error.message, title: 'Access denied');
+      return AppRoutes.signIn;
+    } catch (_) {
       return AppRoutes.signIn;
     }
-
-    return route;
   }
 
   /// Firestore-backed destination after login, signup, cold start, or approval.
-  /// Incomplete profiles go to details before the waiting-for-approval screen.
+  /// Validates driver role and incomplete profiles before routing.
   Future<String> resolvePostAuthRoute({bool signInOnError = false}) async {
     final id = uid;
 
@@ -570,14 +593,41 @@ class AuthController extends GetxController {
 
       final driverFuture = _firestore.fetchDriver(id).timeout(timeout);
       final infoFuture = _firestore.fetchDriverInformation(id).timeout(timeout);
+      final isUserFuture = _firestore.isUserAccount(id).timeout(timeout);
 
       final driver = await driverFuture;
       final info = await infoFuture;
+      final isUser = await isUserFuture;
 
-      if (driver == null) {
-        rememberApproval(false);
-        return AppRoutes.driverRegistration;
+      // 1. Explicit USER account rejection (exists in users collection or role == 'user')
+      if (isUser || (driver != null && driver.role == 'user')) {
+        await signOut(navigate: false);
+        throw const UserAccountRejectedException(
+          'This account is registered as a user. Please use the User App.',
+        );
       }
+
+      // 2. Missing driver profile rejection
+      if (driver == null) {
+        await signOut(navigate: false);
+        throw const UserAccountRejectedException(
+          'This account is registered as a user. Please use the User App.',
+        );
+      }
+
+      // 3. Invalid role rejection
+      if (driver.role != 'driver') {
+        await signOut(navigate: false);
+        throw const UserAccountRejectedException(
+          'This account does not have driver privileges. Please use the User App.',
+        );
+      }
+
+      // Lazy migration for existing driver accounts created before role field was introduced:
+      // If role is default/missing in Firestore, ensure it is written as 'driver'.
+      _firestore
+          .updateDriverFields(id, {DriverFields.role: 'driver'})
+          .catchError((_) {});
 
       final needsDetails =
           info == null ||
@@ -620,6 +670,8 @@ class AuthController extends GetxController {
       }
 
       return AppRoutes.dashboard;
+    } on UserAccountRejectedException {
+      rethrow;
     } catch (_) {
       // Do not wipe approval on transient network errors during cold start.
       if (signInOnError) {
